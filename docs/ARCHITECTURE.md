@@ -18,9 +18,11 @@ Implemented phases:
   NPZ/PLY export, interactive visualization, and geometry metrics.
 - Phase 3: deterministic and GroundingDINO observations, box/SAM2 mask boundary, JEPA/geometry evidence, persistent
   cross-view slots, SQLite/scene-graph records, object reports, W&B diagnostics, and stagewise smoke metrics.
+- Phase 4: bounded active local map, temporal global object graph, episodic events, vector retrieval, atomic SQLite
+  records/event log/snapshots, reload/replay, LOD compression, memory queries, reports, and revision metrics.
 
-Not yet implemented as production systems: calibrated object permanence, persistent 4D fusion, trainable latent dynamics,
-behavior-tree robot execution, and full dataset benchmark adapters.
+Not yet implemented as production systems: calibrated object permanence and identity repair, metric map/region fusion,
+trainable latent dynamics, behavior-tree robot execution, and full dataset benchmark adapters.
 
 ## 2. End-to-end information flow
 
@@ -177,7 +179,7 @@ claims until calibrated on benchmark data. Planners must compare confidence with
 - Extrinsics are 4×4 camera-from-world transforms following the VGGT/OpenCV convention.
 - Point maps are world-frame XYZ for the real backend.
 - The mock uses the same convention but its translation magnitudes are synthetic and non-metric without a scale prior.
-- Memory will distinguish `map`, `odom`, `base_link`, and camera frames explicitly in Phase 4.
+- Phase 4 distinguishes `map` and `base_link` at its public boundary; a complete `odom`/camera frame graph remains open.
 
 Every conversion between frames must carry its frame ID in production memory. Phase 2 arrays are scene-local and record
 their convention in documentation and metadata.
@@ -188,23 +190,24 @@ NPZ stores complete numeric beliefs, including cameras, depth, log-variance, poi
 stores a bounded, finite, optionally uncertainty-filtered colored point cloud. The self-contained Plotly report includes
 depth, uncertainty, a rotatable 3D point cloud, complete metadata, and an epistemic warning.
 
-Artifacts are experimental records, not database formats. Phase 4 persistence will normalize entities and observations
-into SQLite/DuckDB tables while storing large arrays externally.
+Phase 4 stores structured current records, append-only update rows, and snapshots in SQLite. Geometry artifacts remain
+external experimental records; large-array lifecycle and DuckDB/vector backends remain future work.
 
 ## 10. Memory and query boundary
 
-The current memory substrate contains:
+The Phase 4 memory substrate contains:
 
-- robot-centric active observations;
-- regions, objects, relations, and connected-region routes;
-- episodic events with evidence references;
+- bounded robot-centric local objects and observation summaries;
+- temporal objects, histories, regions, relations, and connected-region routes;
+- deterministic episodic events with evidence references;
 - task status;
-- SQLite structured persistence;
+- atomic SQLite current records, event log, snapshots, reload, and replay;
+- task-aware LOD compression;
 - an in-memory cosine index boundary.
 
 Planners do not receive `JEPATokenBundle` or dense geometry directly. They call object, region, route, observation,
-affordance, uncertainty, verification, and task-state methods. This boundary is already enforced even though Phase 4 will
-replace the simple containers.
+affordance, uncertainty, verification, and task-state methods. Durable identity repair and hierarchical place inference
+will extend these containers without exposing raw tensors.
 
 ## 11. Observability
 
@@ -212,6 +215,9 @@ W&B feature runs log token moments, finite fraction, norm histograms, PCA, tempo
 runtime, throughput, system versions, and artifacts. Geometry runs log depth moments/histograms, depth uncertainty,
 scale/pose/reconstruction confidence, finite point fraction, XYZ extents, track count, runtime, NPZ, PLY, and interactive
 reports. Every online run has a local `EXPERIMENT.md`; W&B is never the sole record.
+
+Memory runs log per-revision insert/update counts, local/global object counts, event and history growth, persistence writes,
+confidence, final object/event tables, run-scoped artifacts, and an interactive trajectory/confidence report.
 
 The training logger reserves a stable namespace for component losses, learning rate, gradients, weights, throughput,
 memory, and task-specific metrics. No training curves are fabricated before a training loop exists.

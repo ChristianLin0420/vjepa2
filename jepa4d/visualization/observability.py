@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from jepa4d.data.schemas import JEPATokenBundle, RGBInputBatch
+from jepa4d.memory.memory_update import FourDMemoryCore, MemoryUpdateResult
 from jepa4d.models.geometry_belief import GeometryBelief
 from jepa4d.models.object_slot_grounder import ObjectGroundingResult
 
@@ -76,6 +77,8 @@ class ExperimentLogger:
             wandb.define_metric("pipeline/cumulative_latency_s", step_metric="pipeline/timing_index")
             wandb.define_metric("training/global_step")
             wandb.define_metric("training/*", step_metric="training/global_step")
+            wandb.define_metric("memory/revision")
+            wandb.define_metric("memory/*", step_metric="memory/revision")
 
     @property
     def url(self) -> str | None:
@@ -242,7 +245,7 @@ class ExperimentLogger:
         if self.enabled:
             import wandb
 
-            artifact_name = f"{self.run.id}-{Path(path).stem}".replace("_", "-")
+            artifact_name = f"{self.run.id}-{Path(path).name}".replace("_", "-").replace(".", "-")
             artifact = wandb.Artifact(artifact_name, type=artifact_type)
             if Path(path).is_dir():
                 artifact.add_dir(str(path))
@@ -430,6 +433,71 @@ class ExperimentLogger:
                 }
             )
         self.run.log(payload)
+
+    def log_memory_update(self, result: MemoryUpdateResult, memory: FourDMemoryCore) -> None:
+        if not self.enabled:
+            return
+        payload: dict[str, Any] = {
+            "memory/revision": result.revision,
+            "memory/timestamp": result.timestamp,
+            "memory/inserted_objects": result.inserted_objects,
+            "memory/updated_objects": result.updated_objects,
+            "memory/local_objects": len(memory.active_local_map.objects),
+            "memory/global_objects": len(memory.scene_graph.objects),
+            "memory/episodic_events": len(memory.episodic_memory.events),
+            "memory/persistence_records": result.persistence_records,
+            "memory/mean_confidence": float(
+                np.mean([value.confidence for value in memory.scene_graph.objects.values()])
+            )
+            if memory.scene_graph.objects
+            else 0.0,
+            "memory/history_entries": sum(len(value.history) for value in memory.scene_graph.objects.values()),
+        }
+        self.run.log(payload)
+
+    def log_memory_snapshot(self, memory: FourDMemoryCore) -> None:
+        if not self.enabled:
+            return
+        import wandb
+
+        object_table = wandb.Table(
+            columns=[
+                "object_id",
+                "category",
+                "confidence",
+                "first_seen",
+                "last_seen",
+                "observations",
+                "history",
+                "region",
+            ]
+        )
+        for value in memory.scene_graph.objects.values():
+            object_table.add_data(
+                value.object_id,
+                value.category,
+                value.confidence,
+                value.first_seen_time,
+                value.last_seen_time,
+                value.observation_count,
+                len(value.history),
+                value.region_id,
+            )
+        event_table = wandb.Table(
+            columns=["event_id", "timestamp", "type", "description", "entities"],
+            data=[
+                [event.event_id, event.timestamp, event.event_type, event.description, ",".join(event.entity_ids)]
+                for event in memory.episodic_memory.events
+            ],
+        )
+        self.run.log(
+            {
+                "memory/revision": memory.revision,
+                "memory/object_table": object_table,
+                "memory/event_table": event_table,
+                "memory/snapshot": memory.snapshot().to_serializable(),
+            }
+        )
 
     def finish(self, summary: dict[str, Any] | None = None) -> None:
         if self.run is not None:

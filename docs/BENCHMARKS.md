@@ -1,5 +1,21 @@
 # JEPA-4D benchmark specification
 
+## Phase 4 memory smoke adapter
+
+`MemorySmokeBenchmark` applies five observations to one durable object, queries it, reloads the latest snapshot, and
+reconstructs state from the append-only event log. It reports history/reference recall, query recall, reload/replay
+parity, and query latency. Run the complete dependency chain with:
+
+```bash
+python scripts/run_eval_stagewise.py \
+  --config jepa4d/config/benchmarks/memory_smoke.yaml \
+  --mock --output outputs/memory_smoke
+```
+
+Perfect parity/recall values are deterministic storage invariants. Model-quality memory evaluation still requires object
+localization, relations, temporal QA, last-seen accuracy, identity survival, compression-versus-task curves, database
+growth, replay throughput, and query latency percentiles on DAAAM/NaVQA/SG3D/RoboMME/RoboMemArena-style tasks.
+
 ## Phase 3 object-grounding smoke adapter
 
 `ObjectGroundingSmokeBenchmark` runs two text queries over a deterministic two-view fixture and reports association

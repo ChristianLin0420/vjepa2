@@ -65,10 +65,22 @@ Remaining before declaring model-quality completion:
 Gate: object and identity metrics pass on static, cross-view, video, and occlusion fixtures; teacher dependencies remain
 optional; no planner consumes raw masks or tensors.
 
-## Phase 4 — persistent 4D memory
+## Phase 4 — persistent 4D memory: initial substrate complete
 
-Implement high-frequency robot-centric active map, global building/floor/region/place/object/agent/event graph, frame graph,
-confidence decay, object history, transactional SQLite/DuckDB records, vector backend, array storage, and task-aware LOD.
+Delivered a bounded robot-centric active map, temporal object scene graph, observation/evidence histories, deterministic
+episodic events, in-memory cosine retrieval, monotonic revisions, confidence decay, SQLite WAL records/event log/snapshots,
+atomic update transactions, snapshot reload, event replay, task-aware LOD compression, expanded query APIs, interactive
+memory report, W&B revision timelines, stagewise memory benchmark, demo, tests, and documentation.
+
+Remaining before model-quality completion:
+
+- durable identity split/merge/alias/tombstone operations;
+- explicit frame graph and loop closure;
+- building/floor/room/place hierarchy and region inference;
+- persisted FAISS/Chroma/LanceDB-compatible embeddings and array storage;
+- periodic snapshot policy, sequence watermarks, migrations, and concurrent writer ownership;
+- external memory QA/scene-graph/robotics benchmarks and long-duration scaling;
+- calibrated state/pose uncertainty and active verification based on task cost.
 
 Gate: crash-safe reload, deterministic replay, bounded memory growth, query latency targets, and benchmarked
 compression-versus-task curves.

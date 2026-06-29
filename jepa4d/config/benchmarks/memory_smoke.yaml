@@ -1,0 +1,14 @@
+name: phase4-memory-smoke
+mock: true
+stages:
+  - representation
+  - geometry
+  - object_grounding
+  - memory
+metrics:
+  - history_recall
+  - observation_reference_recall
+  - query_recall
+  - reload_parity
+  - replay_parity
+  - query_latency_ms

@@ -1,16 +1,20 @@
 # JEPA-4D research proposal
 
-## Implementation status update: Phase 3
+## Implementation status update: Phase 4
 
 The proposal now has an implemented semantic evidence boundary. GroundingDINO detections or deterministic mocks become
 typed observations; optional SAM2 prompting refines masks; V-JEPA tokens supply appearance evidence; geometry beliefs
 supply conservative centroids; association creates persistent-in-result object slots; and JSON, NPZ, SQLite, scene graph,
 interactive HTML, and W&B outputs make each run inspectable. A real GroundingDINO CPU smoke test completed successfully.
 
-This narrows the next research question. The immediate challenge is no longer whether the components can be connected,
-but whether identity and uncertainty remain reliable under occlusion, repeated categories, camera motion, and incremental
-updates. Phase 4 must own durable IDs and evidence revision rather than hardening current greedy clustering into an
-implicit truth system.
+The repository now also has a Phase 4 persistent-memory substrate: bounded robot-centric context, temporal object history,
+episodic evidence, vector retrieval, atomic SQLite records/event log/snapshots, reload/replay parity, confidence decay,
+task-aware LOD, planner-safe history queries, benchmark smoke tests, interactive reports, and W&B revision timelines.
+
+This narrows the next research question. The immediate challenge is no longer whether observations can be persisted, but
+whether identity, relations, and uncertainty remain reliable under occlusion, repeated categories, camera motion,
+long-duration updates, and compression. Current deterministic persistence is infrastructure evidence, not proof of memory
+quality or task improvement.
 
 ## Abstract
 

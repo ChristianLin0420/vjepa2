@@ -11,7 +11,12 @@ query_api = WorldModelQueryAPI()
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "phase": 2, "geometry_backends": ["mock", "vggt_optional"]}
+    return {
+        "status": "ok",
+        "phase": 4,
+        "geometry_backends": ["mock", "vggt_optional"],
+        "memory_revision": query_api.memory.revision,
+    }
 
 
 @app.post("/memory/update")

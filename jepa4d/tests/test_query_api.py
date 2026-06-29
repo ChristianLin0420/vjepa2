@@ -19,8 +19,31 @@ def test_query_api_never_exposes_raw_tensors() -> None:
     assert api.get_route("hall", "kitchen")["regions"] == ["hall", "kitchen"]
 
 
+def test_query_api_exposes_history_and_local_belief() -> None:
+    memory = FourDMemoryCore()
+    memory.update(
+        None,
+        [
+            ObjectSlot(
+                "mug-1",
+                category="mug",
+                description="red mug",
+                pose_map=[1.0, 0.0, 0.0],
+                confidence={"overall": 0.8},
+                observation_refs=["frame-1"],
+            )
+        ],
+        timestamp=1.0,
+    )
+    api = WorldModelQueryAPI(memory)
+    assert api.get_local_context(2.0)["objects"][0]["object_id"] == "mug-1"
+    history = api.get_observation_history("mug-1")
+    assert len(history["events"]) == len(history["observations"]) == 1
+    assert api.get_uncertainty("mug-1")["observation_count"] == 1
+
+
 def test_server_health() -> None:
     response = TestClient(app).get("/health")
     assert response.status_code == 200
-    assert response.json()["phase"] == 2
+    assert response.json()["phase"] == 4
     assert "vggt_optional" in response.json()["geometry_backends"]

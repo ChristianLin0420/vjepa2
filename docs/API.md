@@ -1,5 +1,33 @@
 # JEPA-4D API reference
 
+## Phase 4 persistent-memory API
+
+```python
+from jepa4d.memory.memory_update import FourDMemoryCore
+from jepa4d.memory.persistence import MemoryPersistence
+
+persistence = MemoryPersistence("outputs/memory.db")
+memory = FourDMemoryCore()
+result = memory.update(
+    geometry,
+    object_slots,
+    robot_state,
+    timestamp=12.5,
+    persistence=persistence,
+)
+snapshot = memory.snapshot()
+loaded = FourDMemoryCore.load(persistence)
+replayed = FourDMemoryCore.replay(persistence)
+assert loaded.snapshot().to_serializable() == replayed.snapshot().to_serializable()
+```
+
+Updates require monotonic timestamps and atomically persist current records, event-log entries, and snapshots. The
+returned `MemoryUpdateResult` reports revision, inserted/updated objects, local objects, episodic events, and persistence
+records. `LODPolicy.compress(snapshot, task_context)` returns a bounded copy and never mutates live memory.
+
+Planner-facing access remains through `WorldModelQueryAPI`, including `find_object`, `get_local_context`,
+`get_observation_history`, `get_uncertainty`, `get_affordances`, route/region methods, verification, and task state.
+
 ## Phase 3 quick start
 
 ```python
@@ -39,7 +67,8 @@ record. Add `--wandb` only when `WANDB_API_KEY` is supplied through the environm
 - **Stable Phase 1:** RGB contracts, token bundle, mock extraction, local V-JEPA 2.1 extraction, feature artifacts.
 - **Stable Phase 2:** geometry belief contract, mock/VGGT adapter boundary, NPZ/PLY export, reconstruction CLI.
 - **Stable Phase 3 substrate:** object observations/slots, mock/teacher boundary, artifact formats, and grounding CLI.
-- **Preview:** memory/query containers and HTTP endpoints; schemas are stable but persistence semantics will evolve.
+- **Stable Phase 4 substrate:** monotonic updates, active/global memory, event log, snapshots, reload/replay, and LOD.
+- **Preview:** HTTP mutation schemas, frame transforms, identity repair, and production persistence migrations.
 - **Reserved:** calibrated object permanence, latent dynamics, planner execution, and dataset evaluation CLIs.
 
 Public APIs are typed and preserve view/time identity. Tensor shapes in this document are part of the contract.

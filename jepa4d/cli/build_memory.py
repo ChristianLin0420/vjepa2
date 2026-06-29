@@ -110,9 +110,13 @@ def main(
     memory = FourDMemoryCore()
     persistence = MemoryPersistence(output / "memory.db")
     timestamp = float(batch.timestamps.max())
-    for slot in result.slots:
-        memory.scene_graph.upsert_object(slot, geometry=geometry, timestamp=timestamp)
-        persistence.upsert("object", slot.object_id, slot.to_serializable(include_embedding=True))
+    memory_update = memory.update(
+        geometry,
+        result.slots,
+        batch.robot_state,
+        timestamp=timestamp,
+        persistence=persistence,
+    )
     scene_path = output / "scene_graph.json"
     scene_path.write_text(json.dumps(memory.scene_graph.to_serializable(), indent=2) + "\n")
     report_path = build_object_report(batch, result, output / "report.html", wandb_url=logger.url)
@@ -134,6 +138,8 @@ def main(
         f"- Detector/mask backend: `{detector_backend}/{mask_backend}`\n"
         f"- Observations/slots: `{len(result.observations)}/{len(result.slots)}`\n"
         f"- Geometry-attached slots: `{sum(slot.pose_map is not None for slot in result.slots)}`\n"
+        f"- Memory revision: `{memory_update.revision}`\n"
+        f"- Memory update: `{memory_update.to_serializable()}`\n"
         f"- Grounding runtime: `{result.metadata['runtime_seconds']:.6f} s`\n"
         f"- End-to-end runtime: `{sum(timings.values()):.6f} s`\n"
         f"- Stage timings: `{timings}`\n"

@@ -13,14 +13,21 @@ class WorldModelQueryAPI:
         self.memory = memory or FourDMemoryCore()
 
     def find_object(self, query: str, region: str | None = None, time: str | None = None) -> list[dict[str, Any]]:
-        del time
         terms = query.lower().split()
-        return [
+        results = [
             asdict(value)
             for value in self.memory.scene_graph.objects.values()
             if (region is None or value.region_id == region)
             and any(term in f"{value.category} {value.description}".lower() for term in terms)
         ]
+        if time is not None:
+            try:
+                cutoff = float(time)
+            except ValueError:
+                cutoff = None
+            if cutoff is not None:
+                results = [value for value in results if value["last_seen_time"] <= cutoff]
+        return sorted(results, key=lambda value: (value["confidence"], value["last_seen_time"]), reverse=True)
 
     def get_region_summary(self, region_id: str) -> dict[str, Any]:
         objects = [asdict(value) for value in self.memory.scene_graph.objects.values() if value.region_id == region_id]
@@ -53,7 +60,18 @@ class WorldModelQueryAPI:
         return {"start": start_region, "goal": goal_region, "regions": [], "reachable": False}
 
     def get_local_context(self, radius_m: float, frame: str = "base_link") -> dict[str, Any]:
-        return {"radius_m": radius_m, "frame": frame, "observations": self.memory.active_local_map.observations}
+        objects = [
+            asdict(value)
+            for value in self.memory.active_local_map.objects.values()
+            if value.distance_m is None or value.distance_m <= radius_m
+        ]
+        return {
+            "radius_m": radius_m,
+            "frame": frame,
+            "objects": objects,
+            "observations": self.memory.active_local_map.observations,
+            "updated_at": self.memory.active_local_map.updated_at,
+        }
 
     def get_objects_in_region(self, region_id: str, query: str | None = None) -> list[dict[str, Any]]:
         return (
@@ -61,8 +79,10 @@ class WorldModelQueryAPI:
         )
 
     def get_observation_history(self, entity_id: str) -> dict[str, Any]:
-        events = [asdict(event) for event in self.memory.episodic_memory.events if entity_id in event.entity_ids]
-        return {"entity_id": entity_id, "events": events}
+        events = [asdict(event) for event in self.memory.episodic_memory.query(entity_id=entity_id)]
+        value = self.memory.scene_graph.objects.get(entity_id)
+        history = [] if value is None else [asdict(entry) for entry in value.history]
+        return {"entity_id": entity_id, "events": events, "observations": history}
 
     def verify_condition(self, condition: str) -> dict[str, Any]:
         matches = self.find_object(condition)
@@ -80,7 +100,12 @@ class WorldModelQueryAPI:
     def get_uncertainty(self, entity_id: str) -> dict[str, Any]:
         value = self.memory.scene_graph.objects.get(entity_id)
         confidence = 0.0 if value is None else value.confidence
-        return {"entity_id": entity_id, "uncertainty": 1.0 - confidence}
+        return {
+            "entity_id": entity_id,
+            "uncertainty": 1.0 - confidence,
+            "last_seen_time": None if value is None else value.last_seen_time,
+            "observation_count": 0 if value is None else value.observation_count,
+        }
 
     def suggest_verification_action(self, entity_id: str) -> dict[str, Any]:
         uncertainty = self.get_uncertainty(entity_id)["uncertainty"]
