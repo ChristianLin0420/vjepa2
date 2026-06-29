@@ -20,3 +20,5 @@ class MemoryUpdateRequest(BaseModel):
 
 class PlanRequest(BaseModel):
     instruction: str
+    object_name: str = "mug"
+    destination: str = "table"

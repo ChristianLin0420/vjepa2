@@ -80,8 +80,9 @@ record. Add `--wandb` only when `WANDB_API_KEY` is supplied through the environm
 - **Stable Phase 2:** geometry belief contract, mock/VGGT adapter boundary, NPZ/PLY export, reconstruction CLI.
 - **Stable Phase 3 substrate:** object observations/slots, mock/teacher boundary, artifact formats, and grounding CLI.
 - **Stable Phase 4 substrate:** monotonic updates, active/global memory, event log, snapshots, reload/replay, and LOD.
+- **Phase 5 initial substrate:** latent dynamics/rollout, seeded CEM, task graphs, mock execution, verification, and replan traces.
 - **Preview:** HTTP mutation schemas, frame transforms, identity repair, and production persistence migrations.
-- **Reserved:** calibrated object permanence, latent dynamics, planner execution, and dataset evaluation CLIs.
+- **Reserved:** calibrated object permanence, trained real dynamics, hardware execution, and dataset evaluation CLIs.
 
 Public APIs are typed and preserve view/time identity. Tensor shapes in this document are part of the contract.
 
@@ -328,15 +329,45 @@ Routes:
 - `POST /planner/plan`
 - `POST /planner/replan`
 
-Planner responses are explicitly marked mock until Phase 5.
+Planner responses execute the deterministic Phase-5 mock robot and return a full evidence/replanning trace. They are not
+hardware execution endpoints.
 
-## 9. Observability API
+## 9. Latent planning and verified execution
+
+```python
+from jepa4d.models.latent_dynamics import ActionConditionedLatentDynamics
+from jepa4d.planning.execution import VerifiedTaskPlanner
+from jepa4d.planning.latent_mpc import CEMPlanner
+from jepa4d.planning.task_graph import TaskGraph
+from jepa4d.robotics.mock_robot import MockRobot
+
+mpc = CEMPlanner(action_dim=7)
+proposal = mpc.plan(tokens, ActionConditionedLatentDynamics())
+
+graph = TaskGraph.pick_and_place("mug", "table")
+trace = VerifiedTaskPlanner().execute(graph, MockRobot(fail_once={"pick:mug"}))
+assert trace.success and trace.replans == 1
+```
+
+The deterministic dynamics backend is contract-only. Use `backend="learned"` with explicit token/action dimensions for
+the trainable residual model. Verification requires a fresh `RobotObservation`; a successful control return alone cannot
+mark a subgoal verified. Run the CLI with:
+
+```bash
+python -m jepa4d.cli.plan --object mug --destination table --inject-pick-failure
+```
+
+Add `--feature-artifact features.pt --device cuda --wandb` to log real-feature CEM diagnostics, event/subgoal tables,
+verification confidence and uncertainty, failure attribution, replans, recovery, and the JSON trace artifact. Supply
+W&B authentication only through the environment or `wandb login`.
+
+## 10. Observability API
 
 `ExperimentLogger` can be disabled, offline, or online. Feature and geometry log methods accept typed contracts.
 `log_training_step` reserves detailed scalar names for future optimization loops. API keys must be supplied through
 `WANDB_API_KEY`; they must never be added to YAML, Markdown, shell scripts, or source code.
 
-## 10. Errors callers should handle
+## 11. Errors callers should handle
 
 - invalid `[B,V,T]` mode/shape combinations;
 - inconsistent view sequence lengths or spatial dimensions;
@@ -347,3 +378,13 @@ Planner responses are explicitly marked mock until Phase 5.
 - CUDA initialization or out-of-memory failures;
 - video decoding failures;
 - W&B network failures when online logging is requested.
+
+## 12. Phase-6 benchmark API
+
+`DatasetManifest.load(path)` resolves version, revision, split, license, evidence level, and asset hashes.
+`validate_assets()` must return no issues before evaluation. `run_job()` repeats one adapter while preserving typed
+failures, and `write_suite_reports()` emits the aggregate JSON, failure JSON, and HTML dashboard.
+
+Use `python -m jepa4d.cli.eval --config ... --output ... [--wandb]` for the complete suite. Bootstrap intervals over
+repeated deterministic fixtures are infrastructure diagnostics only; model-quality intervals require independent
+scenes or episodes from versioned official adapters.

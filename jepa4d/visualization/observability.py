@@ -81,6 +81,10 @@ class ExperimentLogger:
             wandb.define_metric("memory/*", step_metric="memory/revision")
             wandb.define_metric("identity/variant_index")
             wandb.define_metric("identity/*", step_metric="identity/variant_index")
+            wandb.define_metric("planning/step")
+            wandb.define_metric("planning/*", step_metric="planning/step")
+            wandb.define_metric("benchmark/stage_index")
+            wandb.define_metric("benchmark/*", step_metric="benchmark/stage_index")
 
     @property
     def url(self) -> str | None:
@@ -448,14 +452,184 @@ class ExperimentLogger:
             "memory/global_objects": len(memory.scene_graph.objects),
             "memory/episodic_events": len(memory.episodic_memory.events),
             "memory/persistence_records": result.persistence_records,
-            "memory/mean_confidence": float(
-                np.mean([value.confidence for value in memory.scene_graph.objects.values()])
-            )
-            if memory.scene_graph.objects
-            else 0.0,
+            "memory/mean_confidence": (
+                float(np.mean([value.confidence for value in memory.scene_graph.objects.values()]))
+                if memory.scene_graph.objects
+                else 0.0
+            ),
             "memory/history_entries": sum(len(value.history) for value in memory.scene_graph.objects.values()),
         }
         self.run.log(payload)
+
+    def log_planning_trace(self, trace: Any, *, mpc: dict[str, Any] | None = None) -> None:
+        """Log closed-loop evidence, failures, replans, and optional latent-MPC diagnostics."""
+        if not self.enabled:
+            return
+        import wandb
+
+        event_table = wandb.Table(
+            columns=[
+                "step",
+                "event",
+                "subgoal",
+                "stage",
+                "success",
+                "condition",
+                "confidence",
+                "uncertainty",
+                "reason",
+            ]
+        )
+        confidence_values: list[float] = []
+        uncertainty_values: list[float] = []
+        for event in trace.events:
+            evidence = event.evidence
+            confidence = evidence.get("confidence")
+            uncertainty = evidence.get("uncertainty")
+            if confidence is not None:
+                confidence_values.append(float(confidence))
+            if uncertainty is not None:
+                uncertainty_values.append(float(uncertainty))
+            event_table.add_data(
+                event.step,
+                event.event,
+                event.subgoal_id,
+                evidence.get("stage", ""),
+                evidence.get("success", evidence.get("satisfied")),
+                evidence.get("condition", ""),
+                confidence,
+                uncertainty,
+                evidence.get("reason", ""),
+            )
+            self.run.log(
+                {
+                    "planning/step": event.step,
+                    "planning/event": event.event,
+                    "planning/subgoal": event.subgoal_id,
+                    "planning/event_confidence": confidence,
+                    "planning/event_uncertainty": uncertainty,
+                    "planning/cumulative_replans": sum(
+                        previous.event == "replan" for previous in trace.events if previous.step <= event.step
+                    ),
+                }
+            )
+        subgoal_table = wandb.Table(
+            columns=[
+                "subgoal",
+                "action",
+                "target",
+                "status",
+                "attempts",
+                "condition",
+                "evidence_count",
+                "failure_reason",
+            ],
+            data=[
+                [
+                    value.subgoal_id,
+                    value.action,
+                    value.target,
+                    str(value.status),
+                    value.attempts,
+                    value.verification_condition,
+                    len(value.evidence),
+                    value.failure_reason,
+                ]
+                for value in trace.task_graph.subgoals
+            ],
+        )
+        verified = sum(str(value.status) == "verified" for value in trace.task_graph.subgoals)
+        payload: dict[str, Any] = {
+            "planning/step": max((value.step for value in trace.events), default=0) + 1,
+            "planning/task_success": int(trace.success),
+            "planning/subgoal_progress": verified / max(len(trace.task_graph.subgoals), 1),
+            "planning/replans": trace.replans,
+            "planning/verification_actions": trace.verification_actions,
+            "planning/failure_attribution_count": sum(value.event == "failure_attribution" for value in trace.events),
+            "planning/recovery_success": int(trace.success and trace.replans > 0),
+            "planning/event_count": len(trace.events),
+            "planning/mean_verification_confidence": float(np.mean(confidence_values)) if confidence_values else 0.0,
+            "planning/max_verification_uncertainty": max(uncertainty_values, default=1.0),
+            "planning/event_trace": event_table,
+            "planning/subgoals": subgoal_table,
+        }
+        if mpc is not None:
+            payload.update(
+                {
+                    "dynamics/mpc_score": mpc["score"],
+                    "dynamics/predicted_uncertainty": mpc["predicted_uncertainty"],
+                    "dynamics/horizon": mpc["horizon"],
+                    "dynamics/action_dim": mpc["action_dim"],
+                    "dynamics/action_abs_mean": mpc["action_abs_mean"],
+                    "dynamics/token_count": mpc["token_count"],
+                    "dynamics/token_dim": mpc["token_dim"],
+                    "dynamics/real_vjepa_features": int(mpc.get("real_vjepa_features", False)),
+                }
+            )
+        self.run.log(payload)
+
+    def log_benchmark_suite(self, report: Any) -> None:
+        """Log Phase-6 stage estimates, intervals, latency, and typed failures."""
+        if not self.enabled:
+            return
+        import wandb
+
+        metric_table = wandb.Table(columns=["stage", "benchmark", "metric", "mean", "lower", "upper", "samples"])
+        stage_table = wandb.Table(columns=["stage", "benchmark", "repetitions", "successes", "failures", "latency_ms"])
+        for index, stage in enumerate(report.stages):
+            stage_table.add_data(
+                stage.stage,
+                stage.name,
+                stage.repetitions,
+                stage.successes,
+                stage.failures,
+                stage.latency_ms.mean,
+            )
+            payload: dict[str, Any] = {
+                "benchmark/stage_index": index,
+                "benchmark/stage": stage.stage,
+                "benchmark/name": stage.name,
+                "benchmark/successes": stage.successes,
+                "benchmark/failures": stage.failures,
+                "benchmark/latency_ms": stage.latency_ms.mean,
+            }
+            for name, estimate in stage.metrics.items():
+                metric_table.add_data(
+                    stage.stage,
+                    stage.name,
+                    name,
+                    estimate.mean,
+                    estimate.lower,
+                    estimate.upper,
+                    estimate.samples,
+                )
+                payload[f"benchmark/metrics/{name}"] = estimate.mean
+            self.run.log(payload)
+        failure_table = wandb.Table(
+            columns=["benchmark", "stage", "sample", "category", "message", "contributing"],
+            data=[
+                [
+                    value.benchmark,
+                    value.stage,
+                    value.sample_id,
+                    str(value.category),
+                    value.message,
+                    ",".join(str(item) for item in value.contributing),
+                ]
+                for value in report.failures
+            ],
+        )
+        self.run.log(
+            {
+                "benchmark/stage_index": len(report.stages),
+                "benchmark/suite_id": report.suite_id,
+                "benchmark/stage_table": stage_table,
+                "benchmark/metric_estimates": metric_table,
+                "benchmark/failure_table": failure_table,
+                "benchmark/total_failures": len(report.failures),
+                "benchmark/stages_completed": len(report.stages),
+            }
+        )
 
     def log_memory_snapshot(self, memory: FourDMemoryCore) -> None:
         if not self.enabled:

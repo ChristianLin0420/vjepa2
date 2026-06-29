@@ -4,6 +4,9 @@ This is the entry point for promoted evidence. Read rows left-to-right as a chai
 do not treat an integration run as benchmark evidence. Detailed records contain the reproduction command, artifacts,
 W&B panel guide, limitations, and next decision.
 
+The living cross-phase synthesis is [INSIGHTS.md](INSIGHTS.md). It records conclusions, rejected shortcuts, and the next
+gate without duplicating every numerical result.
+
 ## Evidence map
 
 | Stage | Promoted record | W&B run | Evidence level | Key result | Decision enabled |
@@ -13,6 +16,8 @@ W&B panel guide, limitations, and next decision.
 | 3 · grounding | [Object grounding](2026-06-29-phase3-object-grounding.md) | [wvljbqlv](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/wvljbqlv) | integration | Real V-JEPA + VGGT + GroundingDINO completes with stagewise observability and persistence. | Optimize geometry latency and test association separately. |
 | 4 · memory | [Persistent 4D memory](2026-06-29-phase4-memory.md) | [fa9r6n1c](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/fa9r6n1c) | contract-only | Incremental history, occlusion, SQLite reload, event replay, queries, and LOD compression agree. | Move from fixture observations to real sequence updates. |
 | 4D identity | [Identity ablation](2026-06-29-identity-ablation.md) | [fw4rj25e](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/fw4rj25e) | sequence-level | V-JEPA appearance beats RGB appearance on DAVIS `dogs-scale`, but IoU remains stronger. | Learn/project appearance features; retain geometry/IoU fusion. |
+| 5 · planning | [Verified recovery](2026-06-29-phase5-planning.md) | [8kctk4mt](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/8kctk4mt) | contract-only | Explicit evidence, safe uncertainty rejection, failure attribution, and bounded recovery pass; real V-JEPA→CEM handoff ran on A100 before it became unavailable. | Integrate learned dynamics and a named simulator. |
+| 6 · benchmarking | [Versioned benchmark harness](2026-06-29-phase6-benchmark-harness.md) | [63j8m3cp](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/63j8m3cp) | contract-only | Six stages × five repetitions produce validated manifests, bootstrap intervals, typed failures, and JSON/HTML/Markdown/W&B artifacts. | Add one official licensed mini subset per stage. |
 
 ## Evidence levels
 

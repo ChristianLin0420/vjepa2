@@ -1,0 +1,13 @@
+dataset_id: robo4d-jepa-contract
+version: 0.1.0
+revision: fixture-v0
+split: tiny
+license: MIT-generated-fixture
+evidence_level: contract-only
+official: false
+source_url: null
+description: Versioned generated cases for exercising all JEPA-4D benchmark report contracts.
+assets:
+  - path: ../assets/robo4d_jepa_v0.json
+    sha256: f63de03ce634b26264bfa385c07b5c21ab38385142d5fee006e2ee82eee4c4c1
+    bytes: 376

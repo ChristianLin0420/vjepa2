@@ -213,12 +213,29 @@ relation accuracy, success, subgoal progress, verification efficiency, replannin
 multi-view confidence gain. This is an API regression test only. Phase 1 smoke similarly checks finite features, shape,
 temporal cosine, and runtime.
 
+`planning-smoke` runs a deterministic pick-and-place episode with a one-shot injected pick failure. It requires explicit
+subgoal evidence, control-stage failure attribution, one bounded replan, recovery, and final task success. This validates
+closed-loop contracts, not learned dynamics quality or robot safety.
+
 Run:
 
 ```bash
 python scripts/run_eval_stagewise.py
 pytest jepa4d/tests -q
 ```
+
+The Phase-6 aggregate contract suite is:
+
+```bash
+python -m jepa4d.cli.eval \
+  --config jepa4d/config/benchmarks/phase6_contract.yaml \
+  --output outputs/phase6_benchmark \
+  --wandb
+```
+
+It validates the versioned fixture manifest, executes all six stages repeatedly, computes seeded bootstrap intervals,
+preserves typed failures, and writes JSON, failure JSON, HTML, Markdown, and optional W&B artifacts. This remains
+contract-only until official licensed subset adapters consume independent scenes or episodes.
 
 ## 11. Failure taxonomy
 

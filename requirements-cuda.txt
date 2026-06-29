@@ -1,3 +1,7 @@
+# Driver-compatible PyTorch wheels. The constraints prevent pip from silently
+# selecting a newer CUDA runtime that the installed NVIDIA driver cannot load.
+--extra-index-url https://download.pytorch.org/whl/cu118
+-c constraints-cuda.txt
 -r requirements-cpu.txt
 timm
 einops

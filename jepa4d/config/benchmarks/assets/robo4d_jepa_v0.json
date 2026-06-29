@@ -1,0 +1,10 @@
+{
+  "dataset_id": "robo4d-jepa-contract",
+  "version": "0.1.0",
+  "cases": [
+    {"case_id": "single-image-bootstrap", "track": 1, "mode": "single_image"},
+    {"case_id": "multi-view-memory", "track": 2, "mode": "multi_view"},
+    {"case_id": "delayed-hidden-state", "track": 3, "mode": "video"},
+    {"case_id": "verified-recovery", "track": 4, "mode": "closed_loop"}
+  ]
+}

@@ -95,6 +95,20 @@ compression-versus-task curves.
 Connect V-JEPA 2-AC or JEPA-WM prediction, action/proprioception conditioning, uncertainty/value heads, CEM/MPPI, symbolic
 task graphs, behavior trees, observation-driven verification, and replanning. Add a mock robot before LeRobot or ROS 2.
 
+Initial substrate complete: deterministic and trainable action-conditioned dynamics boundaries, uncertainty/value
+outputs, multi-step rollout, seeded bounded CEM, dependency-checked task graphs, behavior-tree primitives, a stateful mock
+robot, confidence-gated observation verification, failure attribution, bounded retry/replanning, JSON traces, CLI/HTTP
+execution, and a deterministic recovery benchmark. The A100 CUDA contract smoke passes.
+
+Remaining before model-quality or robot-execution completion:
+
+- load and evaluate real V-JEPA 2-AC or JEPA-WM weights;
+- train and calibrate dynamics, uncertainty, and value heads on action-conditioned data;
+- connect continuous MPC proposals to symbolic skills, constraints, and collision checking;
+- evaluate repeated episodes in a named simulator with latency and safety metrics;
+- add asynchronous behavior-tree execution, cancellation, timeouts, and operator escalation;
+- implement LeRobot/ROS 2 only after the simulator gate passes.
+
 Gate: deterministic simulation episodes show subgoal evidence, failure attribution, safe uncertainty thresholds, and
 recovery—not merely open-loop action generation.
 
@@ -102,6 +116,18 @@ recovery—not merely open-loop action generation.
 
 Implement one official-small-subset adapter per stage, JSON/HTML aggregation, confidence intervals, and failure dashboards.
 Then build Robo4D-JEPA with versioned assets and evaluation server.
+
+Initial substrate complete: versioned dataset manifests with size/SHA-256 validation, a generated Robo4D-JEPA contract
+asset, repeated six-stage execution, seeded bootstrap intervals, typed failure records, unified JSON/failure/HTML/Markdown
+reports, an evaluation CLI, W&B tables/artifacts, and regression tests.
+
+Remaining before Phase-6 model-quality completion:
+
+- add one licensed, revision-pinned official mini subset and protocol adapter per stage;
+- compute intervals over independent scenes/episodes and add paired baseline comparisons;
+- expand Robo4D-JEPA from descriptors to distributable RGB/world-memory/execution episodes;
+- implement evaluation-server schema validation, sandboxing, resource limits, and leaderboard policy;
+- document dataset privacy, retention, license, and takedown procedures.
 
 ## Cross-cutting work
 

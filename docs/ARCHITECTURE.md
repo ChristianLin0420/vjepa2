@@ -20,9 +20,13 @@ Implemented phases:
   cross-view slots, SQLite/scene-graph records, object reports, W&B diagnostics, and stagewise smoke metrics.
 - Phase 4: bounded active local map, temporal global object graph, episodic events, vector retrieval, atomic SQLite
   records/event log/snapshots, reload/replay, LOD compression, memory queries, reports, and revision metrics.
+- Phase 5 initial substrate: action/proprioception-conditioned latent dynamics, uncertainty/value outputs, seeded CEM,
+  task graphs, behavior-tree primitives, mock robot execution, observation verification, and bounded replanning traces.
+- Phase 6 initial substrate: versioned/hash-checked dataset manifests, repeated multi-stage benchmark execution, bootstrap
+  intervals, typed failure taxonomy, aggregate JSON/HTML/Markdown reports, evaluation CLI, and W&B artifacts.
 
 Not yet implemented as production systems: calibrated object permanence and identity repair, metric map/region fusion,
-trainable latent dynamics, behavior-tree robot execution, and full dataset benchmark adapters.
+trained real-checkpoint latent dynamics, hardware robot execution, and full dataset benchmark adapters.
 
 ## 2. End-to-end information flow
 
@@ -213,6 +217,11 @@ The Phase 4 memory substrate contains:
 Planners do not receive `JEPATokenBundle` or dense geometry directly. They call object, region, route, observation,
 affordance, uncertainty, verification, and task-state methods. Durable identity repair and hierarchical place inference
 will extend these containers without exposing raw tensors.
+
+Phase 5 adds two planning layers. Seeded CEM operates only behind `ActionConditionedLatentDynamics`, where action and
+optional proprioception condition token rollouts and uncertainty/value heads. The symbolic layer operates on typed
+subgoals and robot observations. A task state advances only when fresh evidence exceeds its confidence threshold;
+execution and verification failures are attributed separately and invoke a bounded replanning policy.
 
 ## 11. Observability
 

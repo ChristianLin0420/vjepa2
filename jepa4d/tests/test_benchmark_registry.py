@@ -3,6 +3,7 @@ import pytest
 from jepa4d.benchmarks.base import BenchmarkAdapter
 from jepa4d.benchmarks.memory.smoke import MemorySmokeBenchmark
 from jepa4d.benchmarks.object_grounding.smoke import ObjectGroundingSmokeBenchmark
+from jepa4d.benchmarks.planning.smoke import PlanningSmokeBenchmark
 from jepa4d.benchmarks.registry import BenchmarkRegistry
 
 
@@ -49,3 +50,9 @@ def test_memory_smoke_has_reload_and_replay_parity() -> None:
     assert metrics["reload_parity"] == 1.0
     assert metrics["replay_parity"] == 1.0
     assert metrics["query_latency_ms"] >= 0.0
+
+
+def test_planning_smoke_recovers_from_injected_failure() -> None:
+    benchmark = PlanningSmokeBenchmark()
+    metrics = benchmark.compute_metrics(benchmark.run())
+    assert metrics["task_success"] == metrics["recovery_success"] == 1.0

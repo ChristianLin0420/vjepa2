@@ -1,14 +1,46 @@
-"""Behavior-tree node names reserved for structured Phase 5 execution."""
+"""Small behavior-tree runtime used by the verified task executor."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+
+
+class NodeStatus(StrEnum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    RUNNING = "running"
 
 
 @dataclass(slots=True)
 class BehaviorNode:
     target: str = ""
 
-    def tick(self) -> str:
-        return "mock_success"
+    def tick(self) -> NodeStatus:
+        return NodeStatus.SUCCESS
+
+
+@dataclass(slots=True)
+class CallbackNode(BehaviorNode):
+    callback: Callable[[], NodeStatus] = lambda: NodeStatus.SUCCESS
+
+    def tick(self) -> NodeStatus:
+        return self.callback()
+
+
+@dataclass(slots=True)
+class SequenceNode(BehaviorNode):
+    children: list[BehaviorNode] = field(default_factory=list)
+    cursor: int = 0
+
+    def tick(self) -> NodeStatus:
+        while self.cursor < len(self.children):
+            status = self.children[self.cursor].tick()
+            if status != NodeStatus.SUCCESS:
+                return status
+            self.cursor += 1
+        return NodeStatus.SUCCESS
 
 
 class NavigateToRegion(BehaviorNode):

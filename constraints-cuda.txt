@@ -1,0 +1,5 @@
+# NVIDIA driver 535 on the project host supports this CUDA runtime.
+# Keep torch and torchvision as a tested pair; requirements-cuda.txt supplies
+# the PyTorch CUDA wheel index containing these local-version builds.
+torch==2.7.1+cu118
+torchvision==0.22.1+cu118

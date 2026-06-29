@@ -71,17 +71,29 @@ reproducible source.
 
 ## Current A100 state
 
-The host exposes an NVIDIA A100 80 GB PCIe at `0000:65:00.0`, but the device is currently unavailable:
+The NVIDIA A100 80 GB PCIe at `0000:65:00.0` was available earlier on 2026-06-29 UTC:
 
-- the original environment had PyTorch `2.12.1+cu130`, which is incompatible with driver 535.309.01;
 - an isolated `.conda-gpu` environment now has official PyTorch `2.5.1+cu121` and torchvision `0.20.1+cu121`;
-- CUDA 12.1 removes the version mismatch but still reports zero available devices;
-- `nvidia-smi` reports `Unable to determine the device handle ... Unknown Error`;
-- `lspci` reports revision `ff` and unknown header type `7f` for the A100.
+- `torch.cuda.is_available()` is true and the device count is one;
+- PyTorch reports compute capability 8.0 and 79.15 GiB total device memory;
+- `nvidia-smi` reports the A100 normally with 81,920 MiB physical memory;
+- `lspci` reports healthy revision `a1` rather than the prior failure revision `ff`;
+- real V-JEPA 2.1 ViT-B feature extraction and the Phase-5 CEM handoff completed on `cuda:0`.
 
-The final two signals indicate that the PCI device is not responding to the host. A Python package change cannot repair
-this. A host administrator must reset/rebind the GPU or reboot the node after confirming that no other workload owns it.
-JEPA-4D must not label a CPU run as GPU merely because an A100 is physically listed.
+Immediately before the Phase-5 W&B logging run, the device returned to revision `ff`: `nvidia-smi` reported `Unknown
+Error`, PyTorch reported zero devices, and the logger therefore ran on CPU over the already-produced real feature
+artifact. Availability has flapped on this host, so every heavy run must execute the health check rather than infer
+readiness from either the physical device listing or a prior successful run.
+
+Kernel evidence identifies the failure as NVIDIA `Xid 79` at 2026-06-29 04:13:53 UTC: “GPU has fallen off the bus.” A
+function-level reset waited 65 seconds and gave up; the upstream bridge then reported that Data Link Layer Link Active was
+not set. Stopping GDM/persistence, endpoint FLR, isolated secondary-bus reset, driver unbind, and endpoint remove/rescan did
+not restore PCI configuration access. The endpoint remains revision `ff`, so a host reboot is required. A safe-mode NVIDIA
+bug report was captured at `/tmp/nvidia-a100-xid79-20260629.log.gz` before reboot.
+
+If Xid 79 recurs after reboot under a controlled load, treat it as a host/platform incident: inspect PCIe slot/riser,
+power delivery, thermals, BIOS/firmware, AER/BMC logs, and driver/platform compatibility rather than changing the Python
+environment.
 
 ## GPU health check
 

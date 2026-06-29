@@ -45,5 +45,14 @@ def test_query_api_exposes_history_and_local_belief() -> None:
 def test_server_health() -> None:
     response = TestClient(app).get("/health")
     assert response.status_code == 200
-    assert response.json()["phase"] == 4
+    assert response.json()["phase"] == 5
     assert "vggt_optional" in response.json()["geometry_backends"]
+
+
+def test_server_planner_is_verified_not_mock() -> None:
+    response = TestClient(app).post(
+        "/planner/replan", json={"instruction": "move mug", "object_name": "mug", "destination": "table"}
+    )
+    assert response.status_code == 200
+    assert response.json()["success"]
+    assert response.json()["replans"] == 1

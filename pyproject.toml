@@ -39,6 +39,8 @@ geometry = [
 
 [project.scripts]
 jepa4d-encode = "jepa4d.cli.encode:app"
+jepa4d-eval = "jepa4d.cli.eval:app"
+jepa4d-plan = "jepa4d.cli.plan:app"
 
 [tool.setuptools.packages.find]
 include = ["jepa4d*", "src*", "app*", "evals*"]

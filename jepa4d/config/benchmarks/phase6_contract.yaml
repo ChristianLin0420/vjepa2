@@ -1,0 +1,15 @@
+suite_id: phase6-contract-v0
+evidence_level: contract-only
+dataset_manifest: jepa4d/config/benchmarks/manifests/robo4d_jepa_v0.yaml
+seed: 0
+repetitions: 5
+confidence: 0.95
+bootstrap_resamples: 2000
+geometry_output_size: 28
+stages:
+  - representation
+  - geometry
+  - object_grounding
+  - tracking4d
+  - memory
+  - planning

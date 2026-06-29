@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from jepa4d.benchmarks.geometry.smoke import GeometrySmokeBenchmark
 from jepa4d.benchmarks.memory.smoke import MemorySmokeBenchmark
 from jepa4d.benchmarks.object_grounding.smoke import ObjectGroundingSmokeBenchmark
+from jepa4d.benchmarks.planning.smoke import PlanningSmokeBenchmark
 from jepa4d.benchmarks.representation.smoke import RepresentationSmokeBenchmark
 from jepa4d.benchmarks.tracking4d.smoke import IdentityAssociationSmokeBenchmark
 from jepa4d.models.geometry_belief import GeometryBeliefHead
@@ -77,6 +78,16 @@ def main() -> None:
         )
     if "tracking4d" in requested:
         benchmark = IdentityAssociationSmokeBenchmark()
+        predictions = benchmark.run(None, "tiny")
+        results.append(
+            {
+                "benchmark": benchmark.report(),
+                "predictions": predictions,
+                "metrics": benchmark.compute_metrics(predictions),
+            }
+        )
+    if "planning" in requested:
+        benchmark = PlanningSmokeBenchmark()
         predictions = benchmark.run(None, "tiny")
         results.append(
             {

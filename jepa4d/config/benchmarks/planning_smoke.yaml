@@ -1,0 +1,17 @@
+name: planning-smoke
+stage: planning
+split: tiny
+seed: 0
+mock: true
+stages:
+  - representation
+  - geometry
+  - object_grounding
+  - memory
+  - planning
+verification:
+  confidence_threshold: 0.8
+replanning:
+  max_attempts_per_subgoal: 2
+  max_replans: 4
+claim: deterministic-simulation-only
