@@ -1,14 +1,15 @@
 
-> JEPA-4D extension status: Phases 0–1 and the Phase-2 VGGT teacher baseline are complete; initial substrates for Phases
-> 3–6 are implemented alongside the original V-JEPA 2 code. See [architecture](docs/ARCHITECTURE.md),
+> JEPA-4D extension status: Phases 0–1, the Phase-2 VGGT teacher baseline, and the Phase-2b metric-depth student gate are
+> complete; initial substrates for Phases 3–6 are implemented alongside the original V-JEPA 2 code. See
+> [architecture](docs/ARCHITECTURE.md),
 > [Phase 2 design](docs/DESIGN_PHASE02_GEOMETRY.md), [Phase 3 design](docs/DESIGN_PHASE03_OBJECT_SLOTS.md),
 > [Phase 4 memory design](docs/DESIGN_PHASE04_MEMORY.md), [API](docs/API.md),
 > [identity evaluation](docs/DESIGN_IDENTITY_EVALUATION.md),
 > [GPU and observability](docs/GPU_AND_OBSERVABILITY.md), and the
 > [initial Phase 3 experiment](docs/experiments/2026-06-29-phase3-object-grounding.md).
-> Phase 2b's versioned teacher/RGB/final-/multi-layer comparison is implemented but its first training run is explicitly
-> blocked pending recovery of the unstable A100 PCIe link; see the
-> [prepared experiment record](docs/experiments/2026-06-29-phase2b-prepared-blocked.md).
+> Phase 2b's versioned teacher/RGB/final-/multi-layer comparison completed all nine registered training runs on a Slurm
+> A100. The final V-JEPA layer is selected on the primary AbsRel metric; see the
+> [completed experiment record](docs/experiments/2026-06-29-phase2b-prepared-blocked.md).
 
 🆕 **[2026-03-16]:** :fire: V-JEPA 2.1 is released :fire: A new familly of models trained with a novel recipe that learns high quality and temporolly consistent dense features !!!
 

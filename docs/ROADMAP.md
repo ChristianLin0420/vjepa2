@@ -38,28 +38,25 @@ VGGT-Omega and MapAnything are deferred as separately named future backends: rep
 invalidate the baseline. Bundle adjustment remains optional post-processing rather than a Phase-2 exit requirement.
 Broader multi-scene/dataset evaluation remains Phase-6 benchmark expansion; the learned-student comparison is Phase 2b.
 
-## Phase 2b — JEPA geometry distillation
+## Phase 2b — JEPA metric-depth distillation v1: complete
 
-Train a lightweight head over frozen or selectively tuned V-JEPA 2.1 layers using VGGT/DUSt3R/MASt3R pseudo-labels and
-ground truth where licensed. Losses: scale-invariant depth, point L1/Huber, pose geodesic/translation, track loss, Gaussian
-NLL, confidence calibration, cross-view reprojection, and temporal consistency.
+The completed v1 gate trains a lightweight metric-depth/log-variance head over frozen V-JEPA 2.1 layers using licensed
+ground truth and VGGT auxiliary targets. Broader point, pose, track, cross-view reprojection, temporal-consistency, and
+selective-encoder-tuning objectives remain explicitly deferred extensions rather than v1 deliverables.
 
 Gate: distilled head must report accuracy/runtime/memory trade-offs against the frozen teacher and a non-JEPA baseline.
 
-Current progress: the versioned TUM RGB-D chronological 64/16/8 train/validation/test split, compact metric-depth and
+Completion evidence: the versioned TUM RGB-D chronological 64/16/8 train/validation/test split, compact metric-depth and
 log-variance probe, VGGT auxiliary distillation, RGB+coordinate non-JEPA baseline, final-layer V-JEPA ablation,
-multi-layer V-JEPA candidate, three-seed training, validation-only checkpoint selection, held-out calibration,
-latency/memory measurement, W&B tables/artifacts, and extensible comparison JSON schema are implemented and pass CPU
-contract tests. The first required GPU launch stopped before W&B initialization because the A100 returned to PCI revision
-`ff`; therefore no Phase-2b quality result is claimed yet.
+four-layer V-JEPA candidate, three-seed 60-epoch training, validation-only checkpoint selection, held-out calibration,
+latency/memory measurement, W&B tables/media/artifacts, and extensible comparison JSON schema all completed under Slurm.
+Content-bound tests and real-model preflight passed before formal job `29587255`; the job produced ten result rows, nine
+checkpoints, zero failures, a passing local/remote artifact audit, and finished W&B run `ikh4ptrb`.
 
-Resume gate after host recovery:
-
-1. require `scripts/check_cuda.py` and sustained CUDA allocation/compute to pass;
-2. execute `scripts/run_phase2b_geometry_distillation.py` on `cuda:0` without changing the pinned split;
-3. verify every seed, checkpoint, comparison row, and artifact locally and in a finished W&B run;
-4. promote results only after comparing VGGT, RGB, final-layer JEPA, and multi-layer JEPA on identical held-out frames;
-5. record whether the multi-layer candidate passes or fails the accuracy/runtime/memory trade-off gate.
+The final-layer student is selected: its held-out AbsRel is 0.07523 ± 0.00384 versus RGB 0.19417 and frozen VGGT 0.12034,
+while it runs 8.30× faster with 14.44× lower encoder peak memory than VGGT. The fixed four-layer average is not promoted
+because its primary AbsRel is 4.44% worse at identical capacity and runtime, despite improvements in RMSE, aligned AbsRel,
+Delta-1, and calibrated NLL. This is one-sequence evidence; independent scenes and learned layer fusion remain future gates.
 
 ## Phase 3 — object slots and grounding: initial substrate complete
 
