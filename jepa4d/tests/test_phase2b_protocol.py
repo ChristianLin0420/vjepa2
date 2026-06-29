@@ -124,6 +124,39 @@ def test_atomic_json_rejects_nan(tmp_path: Path) -> None:
     assert not destination.exists()
 
 
+def test_environment_snapshot_is_json_serializable_on_current_device() -> None:
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    snapshot = phase2b._environment_snapshot(device)
+    json.dumps(snapshot, allow_nan=False)
+    if torch.cuda.is_available():
+        assert isinstance(snapshot["gpu"]["uuid"], str)
+
+
+def test_runner_records_failures_during_pre_wandb_initialization(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    output = tmp_path / "failed-run"
+    with pytest.raises(FileNotFoundError):
+        phase2b.main(
+            dataset_root=tmp_path / "dataset",
+            archive=tmp_path / "missing.tgz",
+            output=output,
+            manifest_path=tmp_path / "manifest.yaml",
+            vjepa_checkpoint=tmp_path / "vjepa",
+            vjepa_implementation=tmp_path / "implementation",
+            vggt_checkpoint=tmp_path / "vggt",
+            device="cuda:0",
+            epochs=1,
+            wandb_enabled=False,
+            wandb_project="test",
+            wandb_entity=None,
+            run_name="test",
+        )
+    failure = json.loads((output / "run_failure.json").read_text())
+    assert failure["error"].startswith("FileNotFoundError:")
+    assert '"stage": "run_failed"' in (output / "events.jsonl").read_text()
+    assert "run_failure.json" in json.loads((output / "artifact_manifest.json").read_text())
+
+
 def test_reported_preprocessing_policy_is_json_serializable(tmp_path: Path) -> None:
     destination = tmp_path / "policy.json"
     phase2b._write_json(destination, {"crop": "center-square", "rgb": "bilinear", "depth": "nearest"})

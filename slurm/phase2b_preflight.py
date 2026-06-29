@@ -25,6 +25,7 @@ from jepa4d.visualization.geometry_student_report import build_geometry_student_
 from scripts.run_phase2b_geometry_distillation import (
     _configure_determinism,
     _dataset_fingerprint,
+    _environment_snapshot,
     _evaluate_depths,
     _fit_metric_scale,
     _normalize,
@@ -240,6 +241,11 @@ def run(args: argparse.Namespace, report: dict[str, Any]) -> None:
         "total_memory_bytes": properties.total_memory,
         "compute_capability": [properties.major, properties.minor],
     }
+    runner_environment = _environment_snapshot(args.device)
+    # Exercise the exact formal-run serialization path while still inside the
+    # preflight gate, including CUDA driver's private UUID wrapper types.
+    json.dumps(runner_environment, allow_nan=False)
+    report["runner_environment_smoke"] = runner_environment
 
     stage_started = time.perf_counter()
     manifest = validate_archive(args.archive, args.manifest)

@@ -50,7 +50,10 @@ def _sha256(path: Path) -> str:
 
 
 def _command(command: list[str]) -> str:
-    result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=60)
+    try:
+        result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"unavailable: {type(error).__name__}: {error}"
     return (result.stdout or result.stderr).strip()
 
 
@@ -60,11 +63,12 @@ def _environment_snapshot(device: str) -> dict[str, Any]:
     if torch.cuda.is_available():
         index = torch.device(device).index or 0
         properties = torch.cuda.get_device_properties(index)
+        uuid = getattr(properties, "uuid", None)
         gpu = {
             "name": properties.name,
             "compute_capability": f"{properties.major}.{properties.minor}",
             "total_memory_gb": properties.total_memory / 2**30,
-            "uuid": getattr(properties, "uuid", None),
+            "uuid": None if uuid is None else str(uuid),
         }
     slurm_keys = (
         "SLURM_JOB_ID",
@@ -787,12 +791,12 @@ def main(
         "jepa4d/config/benchmarks/manifests/tum_rgbd_phase2b_v1.yaml"
     ),
     vjepa_checkpoint: Annotated[Path, typer.Option("--vjepa-checkpoint")] = Path(
-        "checkpoints/vjepa2.1-vitb-fpc64-384"
+        "checkpoints/phase2b_assets/vjepa2.1-vitb-fpc64-384"
     ),
     vjepa_implementation: Annotated[Path, typer.Option("--vjepa-implementation")] = Path(
-        "checkpoints/vjepa21_hf_impl"
+        "checkpoints/phase2b_assets/vjepa21_hf_impl"
     ),
-    vggt_checkpoint: Annotated[Path, typer.Option("--vggt-checkpoint")] = Path("checkpoints/VGGT-1B"),
+    vggt_checkpoint: Annotated[Path, typer.Option("--vggt-checkpoint")] = Path("checkpoints/phase2b_assets/VGGT-1B"),
     device: Annotated[str, typer.Option("--device")] = "cuda:0",
     epochs: Annotated[int, typer.Option("--epochs")] = 60,
     wandb_enabled: Annotated[bool, typer.Option("--wandb/--no-wandb")] = True,
@@ -809,74 +813,83 @@ def main(
     output.mkdir(parents=True, exist_ok=True)
     _configure_determinism()
     _log_event(output, "initializing", device=device, epochs=epochs, wandb=wandb_enabled)
-
-    manifest = validate_archive(archive, manifest_path)
-    split_names = ("train", "validation", "test")
-    split_indices = {name: [int(value) for value in manifest[f"{name}_indices"]] for name in split_names}
-    for name, indices in split_indices.items():
-        if len(indices) != len(set(indices)) or indices != sorted(indices):
-            raise ValueError(f"{name} indices must be unique and chronological")
-    if any(
-        set(split_indices[first]) & set(split_indices[second])
-        for first in split_names
-        for second in split_names
-        if first < second
-    ):
-        raise ValueError("train, validation, and test indices must be disjoint")
-    split_hash = hashlib.sha256(
-        json.dumps(
-            {key: manifest[key] for key in ("train_indices", "validation_indices", "test_indices")}, sort_keys=True
-        ).encode()
-    ).hexdigest()
-    splits = {name: load_tum_indices(dataset_root, split_indices[name]) for name in split_names}
-    if {name: len(values) for name, values in splits.items()} != {"train": 64, "validation": 16, "test": 8}:
-        raise ValueError("formal split must contain exactly 64/16/8 frames")
-
-    _log_event(output, "validating_dataset_extraction")
-    dataset_record = _dataset_fingerprint(dataset_root, splits, archive)
-    _write_json(output / "dataset_fingerprint.json", dataset_record)
-    _log_event(output, "validating_model_assets")
-    asset_record = _checkpoint_manifest(
-        {
-            "vjepa_checkpoint": vjepa_checkpoint,
-            "vjepa_implementation": vjepa_implementation,
-            "vggt_checkpoint": vggt_checkpoint,
-        }
-    )
-    _write_json(output / "asset_manifest.json", asset_record)
-
-    targets_24 = {name: _targets(samples, (24, 24)) for name, samples in splits.items()}
-    targets_518 = {name: _targets(samples, (518, 518)) for name, samples in splits.items()}
-    environment = _environment_snapshot(device)
-    _write_json(output / "environment.json", environment)
-    (output / "pip-freeze.txt").write_text(_command([sys.executable, "-m", "pip", "freeze"]) + "\n")
-    resolved_config = {
-        "dataset_root": str(dataset_root.resolve()),
-        "archive": str(archive.resolve()),
-        "manifest": str(manifest_path.resolve()),
-        "split_hash": split_hash,
-        "output": str(output.resolve()),
-        "vjepa_checkpoint": str(vjepa_checkpoint.resolve()),
-        "vjepa_implementation": str(vjepa_implementation.resolve()),
-        "vggt_checkpoint": str(vggt_checkpoint.resolve()),
-        "device": device,
-        "epochs": epochs,
-        "seeds": [0, 1, 2],
-        "encoder_chunk_size": 8,
-        "probe_batch_size": 8,
-        "optimizer": {"name": "AdamW", "learning_rate": 0.002, "weight_decay": 0.0001, "gradient_clip": 5.0},
-        "loss_weights": {"nll": 1.0, "scale_invariant": 0.25, "gradient": 0.1, "teacher": 0.25},
-        "preprocessing": "center-crop shortest side to square; RGB bilinear to 384; depth nearest to evaluation grid",
-        "teacher_scale_policy": "one global scale fitted on training pixels and frozen before validation/test",
-        "multilayer_policy": "train-standardize each of layers 2/5/8/11, then average; parameter-matched to final layer",
-        "wandb": {"enabled": wandb_enabled, "project": wandb_project, "entity": wandb_entity, "mode": "online"},
-    }
-    _write_json(output / "resolved_config.json", resolved_config)
-
     run = None
     run_finished = False
     artifact_receipt: dict[str, Any] | None = None
     try:
+        manifest = validate_archive(archive, manifest_path)
+        split_names = ("train", "validation", "test")
+        split_indices = {name: [int(value) for value in manifest[f"{name}_indices"]] for name in split_names}
+        for name, indices in split_indices.items():
+            if len(indices) != len(set(indices)) or indices != sorted(indices):
+                raise ValueError(f"{name} indices must be unique and chronological")
+        if any(
+            set(split_indices[first]) & set(split_indices[second])
+            for first in split_names
+            for second in split_names
+            if first < second
+        ):
+            raise ValueError("train, validation, and test indices must be disjoint")
+        split_hash = hashlib.sha256(
+            json.dumps(
+                {key: manifest[key] for key in ("train_indices", "validation_indices", "test_indices")},
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        splits = {name: load_tum_indices(dataset_root, split_indices[name]) for name in split_names}
+        if {name: len(values) for name, values in splits.items()} != {"train": 64, "validation": 16, "test": 8}:
+            raise ValueError("formal split must contain exactly 64/16/8 frames")
+
+        _log_event(output, "validating_dataset_extraction")
+        dataset_record = _dataset_fingerprint(dataset_root, splits, archive)
+        _write_json(output / "dataset_fingerprint.json", dataset_record)
+        _log_event(output, "validating_model_assets")
+        asset_record = _checkpoint_manifest(
+            {
+                "vjepa_checkpoint": vjepa_checkpoint,
+                "vjepa_implementation": vjepa_implementation,
+                "vggt_checkpoint": vggt_checkpoint,
+            }
+        )
+        _write_json(output / "asset_manifest.json", asset_record)
+
+        targets_24 = {name: _targets(samples, (24, 24)) for name, samples in splits.items()}
+        targets_518 = {name: _targets(samples, (518, 518)) for name, samples in splits.items()}
+        environment = _environment_snapshot(device)
+        _write_json(output / "environment.json", environment)
+        (output / "pip-freeze.txt").write_text(_command([sys.executable, "-m", "pip", "freeze"]) + "\n")
+        resolved_config = {
+            "dataset_root": str(dataset_root.resolve()),
+            "archive": str(archive.resolve()),
+            "manifest": str(manifest_path.resolve()),
+            "split_hash": split_hash,
+            "output": str(output.resolve()),
+            "vjepa_checkpoint": str(vjepa_checkpoint.resolve()),
+            "vjepa_implementation": str(vjepa_implementation.resolve()),
+            "vggt_checkpoint": str(vggt_checkpoint.resolve()),
+            "device": device,
+            "epochs": epochs,
+            "seeds": [0, 1, 2],
+            "encoder_chunk_size": 8,
+            "probe_batch_size": 8,
+            "optimizer": {
+                "name": "AdamW",
+                "learning_rate": 0.002,
+                "weight_decay": 0.0001,
+                "gradient_clip": 5.0,
+            },
+            "loss_weights": {"nll": 1.0, "scale_invariant": 0.25, "gradient": 0.1, "teacher": 0.25},
+            "preprocessing": (
+                "center-crop shortest side to square; RGB bilinear to 384; depth nearest to evaluation grid"
+            ),
+            "teacher_scale_policy": "one global scale fitted on training pixels and frozen before validation/test",
+            "multilayer_policy": (
+                "train-standardize each of layers 2/5/8/11, then average; parameter-matched to final layer"
+            ),
+            "wandb": {"enabled": wandb_enabled, "project": wandb_project, "entity": wandb_entity, "mode": "online"},
+        }
+        _write_json(output / "resolved_config.json", resolved_config)
+
         if wandb_enabled:
             import wandb
 

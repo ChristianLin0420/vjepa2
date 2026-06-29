@@ -88,6 +88,10 @@ preflight must first pass on an equal-or-smaller-memory GPU and upload its check
   (relative RMSE `0.00172`, cosine `0.9999986`), but elementwise all-close rejected 458 of 2,146,592 BF16 depth pixels;
   the final pre-result gate therefore bounds outlier fraction, global relative RMSE, and cosine similarity together while
   retaining maximum error as a visible diagnostic instead of allowing one isolated pixel to veto an equivalent batch.
+- preflight `29586767` then passed real models, optimizer/checkpoint reload, report generation, and online W&B artifact
+  upload. The first formal job, `29586856`, passed content authorization but failed before W&B/model optimization because
+  the CUDA driver UUID wrapper was not JSON serializable. The UUID is now normalized to text, the exact formal environment
+  snapshot runs in preflight, and all post-output initialization is covered by the local failure recorder.
 
 ## Historical single-host GPU blocker
 
@@ -106,7 +110,7 @@ approved Slurm partitions, with CUDA health rechecked inside every allocation. N
 
 - Ruff: pass across `jepa4d`, `scripts`, and `slurm`;
 - mypy: pass across 89 Phase-2b-relevant source files;
-- JEPA-4D pytest: 73 passed, one expected local-model skip, one third-party deprecation warning;
+- JEPA-4D pytest: 75 passed, one expected local-model skip, one third-party deprecation warning;
 - Slurm `--test-only`: test, preflight, and formal entrypoints accepted by the scheduler;
 - credential scan: supplied W&B and Hugging Face tokens absent from tracked files;
 - login environment: Python 3.12 dependency check passes;
