@@ -19,6 +19,12 @@ Geometry runs:
 geometry-<mock|vggt|student>-<mode>-<views>v<timesteps>t[-purpose]
 ```
 
+Object runs:
+
+```text
+objects-<mock|grounding_dino|student>-<box|sam2>-<mode>[-purpose]
+```
+
 Training runs additionally include dataset, objective, and seed. Names should identify meaning, not implementation ticket
 numbers.
 
@@ -67,3 +73,7 @@ whether a replacement run supersedes them. Deleting failed evidence without expl
 
 - Phase 1 multi-layer V-JEPA 2.1 video: `gisjdqvx`.
 - Phase 2 official VGGT three-view geometry: `l6nfxczi`.
+- Phase 3 real GroundingDINO CPU grounding: `4b1xse80`.
+
+The failed Phase 3 logging run `bojfn58h` is superseded by `4b1xse80`; its failure and remediation are recorded in
+`2026-06-29-phase3-object-grounding.md`.

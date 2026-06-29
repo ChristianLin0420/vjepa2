@@ -1,0 +1,1 @@
+"""Object grounding benchmark adapters."""

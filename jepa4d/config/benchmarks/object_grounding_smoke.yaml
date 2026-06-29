@@ -1,0 +1,14 @@
+name: phase3-object-grounding-smoke
+mock: true
+stages:
+  - representation
+  - geometry
+  - object_grounding
+inputs:
+  - single_image
+  - multi_view
+metrics:
+  - association_recall
+  - valid_mask_fraction
+  - unique_id_fraction
+  - slot_count

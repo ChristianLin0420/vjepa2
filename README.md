@@ -1,4 +1,8 @@
 
+> JEPA-4D extension status: Phases 0–2 and the initial Phase 3 object-slot substrate are implemented alongside the
+> original V-JEPA 2 code. See [architecture](docs/ARCHITECTURE.md), [Phase 3 design](docs/DESIGN_PHASE03_OBJECT_SLOTS.md),
+> [API](docs/API.md), and the [initial Phase 3 experiment](docs/experiments/2026-06-29-phase3-object-grounding.md).
+
 🆕 **[2026-03-16]:** :fire: V-JEPA 2.1 is released :fire: A new familly of models trained with a novel recipe that learns high quality and temporolly consistent dense features !!!
 
 ## JEPA-4D WorldModel extension

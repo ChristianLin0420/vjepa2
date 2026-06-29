@@ -1,0 +1,14 @@
+phase: 3
+detector_backend: mock
+mask_backend: box
+detector_model_id: IDEA-Research/grounding-dino-tiny
+sam2_model_id: facebook/sam2-hiera-tiny
+box_threshold: 0.3
+text_threshold: 0.25
+association_threshold: 0.55
+association_weights:
+  appearance: 0.65
+  bbox_iou: 0.20
+  geometry: 0.15
+stable_ids: uuid5_category_cluster_pose
+teacher_outputs_are_unverified: true

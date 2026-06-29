@@ -16,9 +16,12 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e '.[dev]'
+      - run: ruff format --check jepa4d scripts
       - run: ruff check jepa4d scripts
+      - run: mypy jepa4d
       - run: pytest jepa4d/tests -q
       - run: python scripts/run_demo_single_image.py --mock --output /tmp/jepa4d-single
       - run: python scripts/run_demo_multiview.py --mock --output /tmp/jepa4d-multiview
       - run: python scripts/run_demo_geometry.py --backend mock --output /tmp/jepa4d-geometry
-      - run: python scripts/run_eval_stagewise.py --config jepa4d/config/benchmarks/geometry_smoke.yaml --mock --output /tmp/jepa4d-benchmark
+      - run: python scripts/run_demo_object_grounding.py --output /tmp/jepa4d-objects
+      - run: python scripts/run_eval_stagewise.py --config jepa4d/config/benchmarks/object_grounding_smoke.yaml --mock --output /tmp/jepa4d-benchmark

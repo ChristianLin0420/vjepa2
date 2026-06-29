@@ -27,3 +27,10 @@ class MemoryPersistence:
         with sqlite3.connect(self.path) as connection:
             row = connection.execute("SELECT payload FROM records WHERE record_id=?", (record_id,)).fetchone()
         return None if row is None else json.loads(row[0])
+
+    def list_kind(self, kind: str) -> list[dict]:
+        with sqlite3.connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT payload FROM records WHERE kind=? ORDER BY record_id", (kind,)
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]

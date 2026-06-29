@@ -45,10 +45,22 @@ NLL, confidence calibration, cross-view reprojection, and temporal consistency.
 
 Gate: distilled head must report accuracy/runtime/memory trade-offs against the frozen teacher and a non-JEPA baseline.
 
-## Phase 3 — object slots and grounding
+## Phase 3 — object slots and grounding: initial substrate complete
 
-Add optional GroundingDINO text boxes, SAM2 masks/tracks, localized descriptions, and compact JEPA slot distillation.
-Implement geometry-aware multi-view association, stable IDs, states, language embeddings, and affordance logits.
+Delivered deterministic and real GroundingDINO detection backends, box masks, optional SAM2 image-prompt boundary,
+V-JEPA token pooling, geometry centroids, cross-view/time association, deterministic IDs, evidence references,
+affordance/state priors, JSON/NPZ/SQLite/scene-graph persistence, query CLI, interactive report, W&B diagnostics, and a
+stagewise object-grounding smoke benchmark. The real GroundingDINO CPU path and W&B artifact flow have been exercised.
+
+Remaining before declaring model-quality completion:
+
+- pin, install, and exercise SAM2 image/video checkpoints;
+- replace batch-local greedy IDs with transactional incremental identity ownership;
+- evaluate AP, mask IoU, HOTA/IDF1, ID switches, false merges/splits, and calibration on labeled data;
+- add ontology/language embedding normalization and localized descriptions;
+- train compact JEPA slot, state, affordance, and uncertainty heads;
+- propagate geometry covariance/frame provenance into slot poses;
+- add explicit occlusion, split, merge, deletion, and re-identification events.
 
 Gate: object and identity metrics pass on static, cross-view, video, and occlusion fixtures; teacher dependencies remain
 optional; no planner consumes raw masks or tensors.

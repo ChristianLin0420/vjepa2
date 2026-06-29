@@ -1,11 +1,46 @@
 # JEPA-4D API reference
 
+## Phase 3 quick start
+
+```python
+from jepa4d.data.rgb_input import load_rgb_input
+from jepa4d.models.geometry_belief import GeometryBeliefHead
+from jepa4d.models.object_slot_grounder import ObjectSlotGrounder
+from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
+
+batch = load_rgb_input(["view0.jpg", "view1.jpg"])
+tokens = VJEPA21FeatureExtractor(mock=True)(batch)
+geometry = GeometryBeliefHead()(batch)
+result = ObjectSlotGrounder()(batch, ["mug", "table"], tokens=tokens, geometry=geometry)
+for slot in result.slots:
+    print(slot.object_id, slot.category, slot.pose_map, slot.observation_refs)
+```
+
+Use `detector_backend="grounding_dino"` for the real teacher and `mask_backend="sam2"` for optional prompted masks.
+Teacher models are loaded lazily. `box` masks are detector baselines, not segmentations. `result.save_json()` records
+summaries and `result.save_masks()` stores lossless masks in NPZ.
+
+The end-to-end CLI is:
+
+```bash
+python -m jepa4d.cli.build_memory \
+  --images view0.jpg --images view1.jpg \
+  --query mug --query table \
+  --detector-backend grounding_dino --mask-backend box \
+  --output outputs/object_memory
+python -m jepa4d.cli.query_memory --db outputs/object_memory/memory.db --query mug
+```
+
+Outputs include object JSON, masks NPZ, SQLite memory, scene graph JSON, interactive HTML, and a Markdown experiment
+record. Add `--wandb` only when `WANDB_API_KEY` is supplied through the environment.
+
 ## 1. Stability levels
 
 - **Stable Phase 1:** RGB contracts, token bundle, mock extraction, local V-JEPA 2.1 extraction, feature artifacts.
 - **Stable Phase 2:** geometry belief contract, mock/VGGT adapter boundary, NPZ/PLY export, reconstruction CLI.
+- **Stable Phase 3 substrate:** object observations/slots, mock/teacher boundary, artifact formats, and grounding CLI.
 - **Preview:** memory/query containers and HTTP endpoints; schemas are stable but persistence semantics will evolve.
-- **Reserved:** object grounding, latent dynamics, planner execution, and dataset evaluation CLIs.
+- **Reserved:** calibrated object permanence, latent dynamics, planner execution, and dataset evaluation CLIs.
 
 Public APIs are typed and preserve view/time identity. Tensor shapes in this document are part of the contract.
 

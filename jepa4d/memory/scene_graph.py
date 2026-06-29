@@ -33,6 +33,14 @@ class SceneGraph:
             confidence=float(object_slot.confidence.get("overall", 0.0)),
             last_seen_time=timestamp if timestamp is not None else object_slot.last_seen_time,
             affordances=dict(object_slot.affordances),
+            metadata={
+                "bbox_2d": object_slot.bbox_2d,
+                "bbox_3d": object_slot.bbox_3d,
+                "pose_map": object_slot.pose_map,
+                "pose_robot": object_slot.pose_robot,
+                "observation_refs": list(object_slot.observation_refs),
+                "states": dict(object_slot.states),
+            },
         )
         self.objects[value.object_id] = value
         return value

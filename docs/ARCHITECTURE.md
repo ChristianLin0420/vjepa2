@@ -16,9 +16,11 @@ Implemented phases:
 - Phase 1: real and mock V-JEPA 2.1 dense feature extraction, multi-layer tokens, serialization, and observability.
 - Phase 2: deterministic geometry mock, optional official VGGT backend, camera/depth/point/track beliefs, uncertainty,
   NPZ/PLY export, interactive visualization, and geometry metrics.
+- Phase 3: deterministic and GroundingDINO observations, box/SAM2 mask boundary, JEPA/geometry evidence, persistent
+  cross-view slots, SQLite/scene-graph records, object reports, W&B diagnostics, and stagewise smoke metrics.
 
-Not yet implemented as production systems: teacher-based object grounding, persistent 4D fusion, trainable latent
-dynamics, behavior-tree robot execution, and full dataset benchmark adapters.
+Not yet implemented as production systems: calibrated object permanence, persistent 4D fusion, trainable latent dynamics,
+behavior-tree robot execution, and full dataset benchmark adapters.
 
 ## 2. End-to-end information flow
 
@@ -42,7 +44,7 @@ VJEPA21FeatureExtractor │
         │               │
         └───────┬───────┘
                 ▼
-ObjectSlotGrounder (Phase 3)
+ObjectSlotGrounder
   masks, identity, category, state, language, affordances
                 │
                 ▼
@@ -61,6 +63,10 @@ Latent dynamics + task graph + behavior tree (Phase 5)
 The feature and geometry branches are separate in Phase 2. This allows independent benchmarking and avoids claiming that
 VGGT geometry is already distilled into V-JEPA tokens. Phase 2 training design joins them through explicit distillation
 losses, described in `DESIGN_PHASE02_GEOMETRY.md`.
+
+Phase 3 joins the branches only at an evidence adapter: boxes pool V-JEPA patch tokens and masks pool point-map geometry.
+This is not end-to-end training yet. Association preserves source view/time references so Phase 4 can replay, revise, or
+reject a slot without losing its observations. Full rationale and failure modes are in `DESIGN_PHASE03_OBJECT_SLOTS.md`.
 
 ## 3. Canonical input contract
 

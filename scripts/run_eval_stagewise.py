@@ -14,8 +14,10 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jepa4d.benchmarks.geometry.smoke import GeometrySmokeBenchmark
+from jepa4d.benchmarks.object_grounding.smoke import ObjectGroundingSmokeBenchmark
 from jepa4d.benchmarks.representation.smoke import RepresentationSmokeBenchmark
 from jepa4d.models.geometry_belief import GeometryBeliefHead
+from jepa4d.models.object_slot_grounder import ObjectSlotGrounder
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
 
 
@@ -43,6 +45,16 @@ def main() -> None:
     if "geometry" in requested:
         benchmark = GeometrySmokeBenchmark()
         predictions = benchmark.run(GeometryBeliefHead(output_size=int(config.get("output_size", 28))), "tiny")
+        results.append(
+            {
+                "benchmark": benchmark.report(),
+                "predictions": predictions,
+                "metrics": benchmark.compute_metrics(predictions),
+            }
+        )
+    if "object_grounding" in requested:
+        benchmark = ObjectGroundingSmokeBenchmark()
+        predictions = benchmark.run(ObjectSlotGrounder(), "tiny")
         results.append(
             {
                 "benchmark": benchmark.report(),

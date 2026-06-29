@@ -1,5 +1,22 @@
 # JEPA-4D benchmark specification
 
+## Phase 3 object-grounding smoke adapter
+
+`ObjectGroundingSmokeBenchmark` runs two text queries over a deterministic two-view fixture and reports association
+recall, valid-mask fraction, unique-ID fraction, and slot count. Run the complete dependency chain with:
+
+```bash
+python scripts/run_eval_stagewise.py \
+  --config jepa4d/config/benchmarks/object_grounding_smoke.yaml \
+  --mock --output outputs/object_grounding_smoke
+```
+
+The adapter is an interface regression test. Its deterministic perfect scores must never be presented as detection or
+tracking quality. Model-quality evaluation must add box AP/recall, phrase grounding, mask IoU/boundary quality, HOTA,
+IDF1, identity switches, track survival under occlusion, false merge/split rates, pose error, confidence ECE/NLL, latency,
+and peak memory. Results must be stratified by single image, static multi-view, ordered video, camera motion, same-category
+instances, and missing geometry.
+
 ## 1. Evaluation philosophy
 
 JEPA-4D is decomposed because a single robot task-success number cannot identify whether a failure originated in visual

@@ -13,6 +13,7 @@ import torch
 
 from jepa4d.data.schemas import JEPATokenBundle, RGBInputBatch
 from jepa4d.models.geometry_belief import GeometryBelief
+from jepa4d.models.object_slot_grounder import ObjectGroundingResult
 
 
 def pca_rgb(tokens: torch.Tensor, patch_grid: tuple[int, int]) -> np.ndarray:
@@ -235,6 +236,54 @@ class ExperimentLogger:
             else:
                 artifact.add_file(str(path))
             self.run.log_artifact(artifact)
+
+    def log_object_grounding(self, batch: RGBInputBatch, result: ObjectGroundingResult) -> None:
+        if not self.enabled:
+            return
+        import wandb
+
+        scores = [observation.score for observation in result.observations]
+        table = wandb.Table(
+            columns=["object_id", "category", "observations", "detection", "association", "has_pose"],
+            data=[
+                [
+                    slot.object_id,
+                    slot.category,
+                    len(slot.observations),
+                    slot.confidence.get("detection", 0.0),
+                    slot.confidence.get("association", 0.0),
+                    slot.pose_map is not None,
+                ]
+                for slot in result.slots
+            ],
+        )
+        image = batch.images[0, 0, 0].permute(1, 2, 0).clamp(0, 1).cpu().numpy()
+        visible_observations = [
+            value for value in result.observations if value.view_index == 0 and value.time_index == 0
+        ]
+        semantic_mask = np.zeros(image.shape[:2], dtype=np.uint16)
+        class_labels: dict[int, str] = {}
+        for class_id, observation in enumerate(visible_observations, start=1):
+            semantic_mask[observation.mask] = class_id
+            class_labels[class_id] = observation.category
+        mask_payload: dict[str, Any] = {"predictions": {"mask_data": semantic_mask, "class_labels": class_labels}}
+        payload: dict[str, Any] = {
+            "objects/runtime_s": result.metadata.get("runtime_seconds", 0.0),
+            "objects/query_count": len(result.queries),
+            "objects/detection_count": len(result.observations),
+            "objects/slot_count": len(result.slots),
+            "objects/mean_observations_per_slot": len(result.observations) / max(len(result.slots), 1),
+            "objects/with_geometry_fraction": sum(slot.pose_map is not None for slot in result.slots)
+            / max(len(result.slots), 1),
+            "objects/slot_table": table,
+        }
+        if scores:
+            payload["objects/detection_score_mean"] = float(np.mean(scores))
+            payload["objects/detection_score_min"] = float(np.min(scores))
+            payload["objects/detection_score_histogram"] = wandb.Histogram(scores)
+        if visible_observations:
+            payload["objects/mask_overlay"] = wandb.Image(image, masks=mask_payload, caption="Grounded object masks")
+        self.run.log(payload)
 
     def finish(self, summary: dict[str, Any] | None = None) -> None:
         if self.run is not None:
