@@ -4,7 +4,13 @@
 
 Protocol and promotion criteria are frozen before any Phase-2c model inference or optimization. Assets may be downloaded,
 hashed, associated, and audited on the login node; all CUDA tests, real-model preflight, profiling, and training must run
-inside the approved Slurm allocations. This record contains no Phase-2c model-quality result yet.
+inside the approved Slurm allocations. At preregistration time, this record contained no Phase-2c model-quality result.
+
+Post-run update: formal Slurm job `29590023` completed with zero failures and passing internal/external postflight. The
+candidate improved macro AbsRel from 0.43807 to 0.41801 and improved both held-out sequence means, but its 1.1655× latency
+exceeded the frozen 1.10× ceiling. The decision is `retain_final_layer`. Full metrics, W&B/artifact identities, failure
+history, limitations, and next experiments are recorded in the
+[completed Phase 2c result](2026-06-29-phase2c-cross-sequence.md); the protocol below remains unchanged.
 
 ## Question
 
