@@ -148,3 +148,11 @@ motion-aware assignment—not another hand-tuned weighted sum.
 Freeze the operating point before evaluating additional DAVIS sequences. Implement mask-weighted multi-layer features,
 constant-velocity prediction, and Hungarian assignment as separately ablated changes. Propagate merge/split evidence into
 Phase 4 identity events without deleting historical observations.
+
+## Downloaded W&B record snapshot
+
+The promoted run record was downloaded through the W&B API on 2026-06-29 and verified in `finished` state. Its persisted
+summary identifies the exploratory best DAVIS operating point as appearance weight 0.25 and threshold 0.40, with pairwise
+F1 0.767661, six ID switches, four fragments, and one false merge. W&B lists six logged artifacts covering result/sweep
+tables, identity metrics, interactive report, experiment record, and history. The same-sequence tuning limitation still
+applies; this snapshot does not turn the operating point into held-out evidence.

@@ -5,8 +5,8 @@ import pytest
 import torch
 
 from jepa4d.data.rgb_input import from_view_sequences
-from jepa4d.models.geometry_belief import GeometryBelief, GeometryBeliefHead
-from jepa4d.models.geometry_export import export_geometry_npz, export_pointcloud_ply
+from jepa4d.models.geometry_belief import GeometryBelief, GeometryBeliefHead, _unproject
+from jepa4d.models.geometry_export import export_colmap_text, export_geometry_npz, export_pointcloud_ply
 
 
 def image(value: int = 0) -> np.ndarray:
@@ -54,6 +54,10 @@ def test_geometry_exports_are_portable(tmp_path: Path) -> None:
     assert values["depth_mean"].shape == (1, 2, 1, 28, 28)
     assert ply.read_text().startswith("ply\nformat ascii 1.0")
     assert "element vertex 100" in ply.read_text().split("end_header")[0]
+    colmap = export_colmap_text(belief, batch, tmp_path / "colmap")
+    assert "PINHOLE 28 28" in (colmap / "cameras.txt").read_text()
+    assert "view_0" not in (colmap / "images.txt").read_text()
+    assert (colmap / "points3D.txt").exists()
 
 
 def test_confidence_range_is_enforced() -> None:
@@ -72,6 +76,15 @@ def test_confidence_range_is_enforced() -> None:
             torch.tensor([0.5]),
             "invalid",
         )
+
+
+def test_unprojection_uses_camera_from_world_extrinsics() -> None:
+    depth = torch.ones(1, 1, 1, 1)
+    intrinsics = torch.eye(3).reshape(1, 1, 3, 3)
+    camera_from_world = torch.eye(4).reshape(1, 1, 4, 4)
+    camera_from_world[..., 0, 3] = -1.0
+    point = _unproject(depth, intrinsics, camera_from_world)
+    assert torch.allclose(point[0, 0, 0, 0], torch.tensor([1.0, 0.0, 1.0]))
 
 
 def test_vggt_dependency_error_is_actionable() -> None:

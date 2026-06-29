@@ -9,6 +9,7 @@ confidence.
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -163,6 +164,7 @@ class GeometryBeliefHead(nn.Module):
         output_size: int = 112,
         query_grid_size: int = 8,
         known_scale_prior: bool = False,
+        precision: str = "float32",
     ) -> None:
         super().__init__()
         if backend not in {"mock", "vggt"}:
@@ -173,6 +175,11 @@ class GeometryBeliefHead(nn.Module):
         self.output_size = output_size
         self.query_grid_size = query_grid_size
         self.known_scale_prior = known_scale_prior
+        if precision not in {"float32", "bfloat16", "float16"}:
+            raise ValueError(f"unsupported geometry precision: {precision}")
+        if str(device).startswith("cpu") and precision != "float32":
+            raise ValueError("reduced geometry precision requires a CUDA device")
+        self.precision = precision
         self.model = model
         self._load_seconds = 0.0
         if backend == "vggt" and self.model is None:
@@ -192,14 +199,26 @@ class GeometryBeliefHead(nn.Module):
                 parameter.requires_grad_(False)
 
     def forward(self, batch: RGBInputBatch) -> GeometryBelief:
+        is_cuda = self.device_name.startswith("cuda") and torch.cuda.is_available()
+        if is_cuda:
+            torch.cuda.reset_peak_memory_stats(torch.device(self.device_name))
+            torch.cuda.synchronize(torch.device(self.device_name))
         started = time.perf_counter()
         belief = self._forward_mock(batch) if self.backend == "mock" else self._forward_vggt(batch)
+        if is_cuda:
+            torch.cuda.synchronize(torch.device(self.device_name))
+        runtime_seconds = time.perf_counter() - started
         belief.metadata.update(
             {
                 "backend": self.backend,
                 "model_id": "deterministic_geometry_mock" if self.backend == "mock" else self.model_id,
-                "runtime_seconds": time.perf_counter() - started,
+                "runtime_seconds": runtime_seconds,
                 "model_load_seconds": self._load_seconds,
+                "device": self.device_name,
+                "precision": self.precision,
+                "cuda_peak_memory_bytes": (
+                    torch.cuda.max_memory_allocated(torch.device(self.device_name)) if is_cuda else None
+                ),
                 "input_mode": batch.mode,
                 "input_shape": list(batch.images.shape),
                 "known_intrinsics": batch.intrinsics is not None,
@@ -321,7 +340,13 @@ class GeometryBeliefHead(nn.Module):
             batch_size, sequence, 3, 518, 518
         )
         query = self._query_points(518, 518, images.device).unsqueeze(0).expand(batch_size, -1, -1)
-        with torch.inference_mode():
+        amp_dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16}.get(self.precision)
+        autocast = (
+            torch.autocast(device_type="cuda", dtype=amp_dtype)
+            if images.is_cuda and amp_dtype is not None
+            else nullcontext()
+        )
+        with torch.inference_mode(), autocast:
             predictions = self.model(images, query_points=query)
         try:
             from vggt.utils.pose_enc import pose_encoding_to_extri_intri

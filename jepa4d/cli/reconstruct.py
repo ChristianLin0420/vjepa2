@@ -10,7 +10,7 @@ import typer
 
 from jepa4d.data.rgb_input import load_rgb_input
 from jepa4d.models.geometry_belief import GeometryBeliefHead
-from jepa4d.models.geometry_export import export_geometry_npz, export_pointcloud_ply
+from jepa4d.models.geometry_export import export_colmap_text, export_geometry_npz, export_pointcloud_ply
 from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, PanelRecord, StageRecord
 from jepa4d.visualization.geometry_report import build_geometry_report
 from jepa4d.visualization.observability import ExperimentLogger
@@ -29,6 +29,7 @@ def main(
     device: Annotated[str, typer.Option("--device")] = "cpu",
     max_frames: Annotated[int, typer.Option("--max-frames")] = 16,
     output_size: Annotated[int, typer.Option("--output-size")] = 112,
+    precision: Annotated[str, typer.Option("--precision")] = "float32",
     known_scale_prior: Annotated[bool, typer.Option("--known-scale-prior")] = False,
     wandb: Annotated[bool, typer.Option("--wandb/--no-wandb")] = False,
     wandb_project: Annotated[str, typer.Option("--wandb-project")] = "jepa4d-worldmodel",
@@ -42,6 +43,7 @@ def main(
         model_id=model_id,
         output_size=output_size,
         known_scale_prior=known_scale_prior,
+        precision=precision,
     )
     name = run_name or f"geometry-{backend}-{batch.mode}-{batch.images.shape[1]}v{batch.images.shape[2]}t"
     logger = ExperimentLogger(
@@ -56,6 +58,7 @@ def main(
             "device": device,
             "output_size": output_size,
             "known_scale_prior": known_scale_prior,
+            "precision": precision,
             "input": batch.to_serializable(),
         },
     )
@@ -63,6 +66,7 @@ def main(
     output.mkdir(parents=True, exist_ok=True)
     npz_path = export_geometry_npz(belief, output / "geometry_belief.npz")
     ply_path = export_pointcloud_ply(belief, batch, output / "pointcloud.ply")
+    colmap_path = export_colmap_text(belief, batch, output / "colmap")
     metadata_path = output / "metadata.json"
     metadata_path.write_text(json.dumps(belief.to_serializable(), indent=2) + "\n")
     logger.log_geometry_belief(batch, belief)
@@ -85,6 +89,7 @@ def main(
             "views": batch.images.shape[1],
             "timesteps": batch.images.shape[2],
             "output_size": output_size,
+            "precision": precision,
         },
         stages=[
             StageRecord(
@@ -108,12 +113,19 @@ def main(
             "pose_confidence": belief.pose_confidence.tolist(),
             "reconstruction_confidence": belief.reconstruction_confidence.tolist(),
             "runtime_s": belief.metadata["runtime_seconds"],
+            "cuda_peak_memory_gb": (
+                None
+                if belief.metadata["cuda_peak_memory_bytes"] is None
+                else belief.metadata["cuda_peak_memory_bytes"] / 1024**3
+            ),
         },
         artifacts=[
             ArtifactRecord(p, p.suffix.lstrip("."), purpose)
             for p, purpose in (
                 (npz_path, "Serialized geometry belief"),
                 (ply_path, "Inspectable point cloud"),
+                (colmap_path / "cameras.txt", "COLMAP camera model"),
+                (colmap_path / "images.txt", "COLMAP camera poses"),
                 (metadata_path, "JSON metadata"),
                 (report_path, "Interactive diagnostics"),
             )
@@ -140,6 +152,7 @@ def main(
             {
                 "belief": str(npz_path),
                 "pointcloud": str(ply_path),
+                "colmap": str(colmap_path),
                 "metadata": str(metadata_path),
                 "report": str(report_path),
                 "experiment": str(experiment_path),

@@ -199,6 +199,11 @@ class ExperimentLogger:
             "pipeline/step": step,
             "pipeline/stage": "geometry_belief",
             "geometry/runtime_s": belief.metadata.get("runtime_seconds", 0.0),
+            "geometry/cuda_peak_memory_gb": (
+                0.0
+                if belief.metadata.get("cuda_peak_memory_bytes") is None
+                else belief.metadata["cuda_peak_memory_bytes"] / 1024**3
+            ),
             "geometry/input_views": batch.images.shape[1],
             "geometry/input_steps": batch.images.shape[2],
             "geometry/scale_confidence": belief.scale_confidence.float().mean().item(),

@@ -130,3 +130,10 @@ storage, or robot task improvement. Those require external ground truth and long
 Use a versioned RGB video with two visually similar mugs, real Phase 3 detections, and manually labeled visibility/identity.
 Measure false merge/split rate, IDF1, last-seen retrieval, event accuracy, database growth, replay time, p50/p95/p99 query
 latency, and accuracy after multiple LOD budgets.
+
+## Downloaded W&B record snapshot
+
+The promoted run record was downloaded through the W&B API on 2026-06-29 and verified in `finished` state. Its persisted
+summary reports revision 8, one global/local object, seven history entries, seven episodic events, four compressed history
+entries, one query match, and exact reload/replay parity. W&B lists eight logged artifacts covering object/event tables,
+the memory snapshot and metrics, SQLite memory, interactive report, experiment record, and history.

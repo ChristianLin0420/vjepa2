@@ -213,6 +213,19 @@ relation accuracy, success, subgoal progress, verification efficiency, replannin
 multi-view confidence gain. This is an API regression test only. Phase 1 smoke similarly checks finite features, shape,
 temporal cosine, and runtime.
 
+The official Phase-2 teacher mini-benchmark uses the checksum-pinned TUM RGB-D Freiburg1 XYZ manifest and requires CUDA:
+
+```bash
+python scripts/run_phase2_geometry_benchmark.py \
+  --dataset-root /path/to/rgbd_dataset_freiburg1_xyz \
+  --archive /path/to/rgbd_dataset_freiburg1_xyz.tgz \
+  --device cuda:0 --wandb
+```
+
+It emits aligned depth/point metrics, Sim(3) pose metrics, held-out variance calibration, per-sample failures, COLMAP
+text export, and FP32/BF16 one-/two-/four-/eight-frame latency and peak-memory profiles. Its single-sequence evidence must
+not be interpreted as metric scale or cross-scene generalization.
+
 `planning-smoke` runs a deterministic pick-and-place episode with a one-shot injected pick failure. It requires explicit
 subgoal evidence, control-stage failure attribution, one bounded replan, recovery, and final task success. This validates
 closed-loop contracts, not learned dynamics quality or robot safety.

@@ -81,3 +81,11 @@ state with three logged artifacts.
 2. Calibrate dynamics uncertainty on held-out action-conditioned episodes.
 3. Connect MPC actions to constrained symbolic skills in a named simulator.
 4. Run repeated randomized failures and report success, false verification, recovery, collision, and latency intervals.
+
+## Downloaded W&B record snapshot
+
+The promoted run record was downloaded through the W&B API on 2026-06-29 and verified in `finished` state. Its persisted
+summary reports task success 1.0, subgoal progress 1.0, one attributed failure, one replan, three verification actions,
+nine events, MPC score -0.901793, and predicted uncertainty 0.024726. W&B lists three logged artifacts: event/subgoal
+tables and the planning trace. The remote run used the saved real V-JEPA feature but executed CEM/recovery on CPU, as
+already noted above.

@@ -21,21 +21,22 @@ dense/global/multi-layer tokens, tubelet validity, PyTorch/Zarr output, PCA and 
 Exit evidence: mock and real ViT-B inference pass; feature artifacts are finite and reproducible; intermediate layers are
 available; upstream tests remain green.
 
-## Phase 2 — geometry belief: implemented substrate, calibration work remains
+## Phase 2 — geometry belief teacher baseline: complete
 
 Delivered deterministic mock, official VGGT package/checkpoint boundary, real single/multi-view CPU smoke tests, camera
 matrices, depth/point mean and log-variance, tracks, confidence policy, NPZ/PLY export, interactive 3D reports, geometry
 W&B panels, configuration, benchmark smoke test, and documentation.
 
-Remaining before declaring model-quality completion:
+Completion evidence now includes a checksum-pinned official TUM RGB-D Freiburg1 XYZ mini subset, deterministic
+calibration/test frames, per-frame aligned depth and point metrics, Sim(3)-aligned camera metrics, held-out variance
+calibration, explicit camera-from-world numerical tests, COLMAP text export, categorized per-sample failures, and A100
+FP32/BF16 latency/memory scaling from one to eight frames. The official VGGT-1B teacher run is logged as W&B
+`rcpsxq6g`; its bounded claim is an official single-sequence mini-baseline, not cross-dataset generalization or metric
+single-image scale.
 
-- run official datasets with immutable manifests;
-- validate coordinate conventions against known cameras;
-- add pose/depth/point metrics and per-sample failure reports;
-- calibrate uncertainty on held-out splits;
-- add COLMAP export and optional bundle adjustment;
-- profile CUDA precision, memory, and view-count scaling;
-- decide whether VGGT-Omega or MapAnything merits a separate backend rather than silently replacing VGGT.
+VGGT-Omega and MapAnything are deferred as separately named future backends: replacing the pinned VGGT-1B teacher would
+invalidate the baseline. Bundle adjustment remains optional post-processing rather than a Phase-2 exit requirement.
+Broader multi-scene/dataset evaluation remains Phase-6 benchmark expansion; the learned-student comparison is Phase 2b.
 
 ## Phase 2b — JEPA geometry distillation
 
@@ -44,6 +45,21 @@ ground truth where licensed. Losses: scale-invariant depth, point L1/Huber, pose
 NLL, confidence calibration, cross-view reprojection, and temporal consistency.
 
 Gate: distilled head must report accuracy/runtime/memory trade-offs against the frozen teacher and a non-JEPA baseline.
+
+Current progress: the versioned TUM RGB-D chronological 64/16/8 train/validation/test split, compact metric-depth and
+log-variance probe, VGGT auxiliary distillation, RGB+coordinate non-JEPA baseline, final-layer V-JEPA ablation,
+multi-layer V-JEPA candidate, three-seed training, validation-only checkpoint selection, held-out calibration,
+latency/memory measurement, W&B tables/artifacts, and extensible comparison JSON schema are implemented and pass CPU
+contract tests. The first required GPU launch stopped before W&B initialization because the A100 returned to PCI revision
+`ff`; therefore no Phase-2b quality result is claimed yet.
+
+Resume gate after host recovery:
+
+1. require `scripts/check_cuda.py` and sustained CUDA allocation/compute to pass;
+2. execute `scripts/run_phase2b_geometry_distillation.py` on `cuda:0` without changing the pinned split;
+3. verify every seed, checkpoint, comparison row, and artifact locally and in a finished W&B run;
+4. promote results only after comparing VGGT, RGB, final-layer JEPA, and multi-layer JEPA on identical held-out frames;
+5. record whether the multi-layer candidate passes or fails the accuracy/runtime/memory trade-off gate.
 
 ## Phase 3 — object slots and grounding: initial substrate complete
 

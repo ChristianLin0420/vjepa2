@@ -117,3 +117,11 @@ support the chosen conversion.
 
 Proceed to explicit geometry belief with official VGGT, preserve single-image uncertainty, validate cameras/depth/points/
 tracks and artifacts, and benchmark geometry independently before distilling it into V-JEPA features.
+
+## Downloaded W&B record snapshot
+
+The promoted run record was downloaded through the W&B API on 2026-06-29 and verified in `finished` state. Its persisted
+summary reports dense shape `[1,1,4,576,768]`, finite fraction 1.0, temporal cosine mean/min 0.995514/0.993713, model
+runtime 4.124717 s, total runtime 8.768010 s, and throughput 0.912408 frames/s. W&B lists five logged artifacts spanning
+the feature output, interactive report, diagnostic tables, and run history. These values are the remote source of record,
+not a transcription from the local report.

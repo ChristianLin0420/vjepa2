@@ -178,3 +178,10 @@ The promoted v4 run synced 14 media files and 26 artifact files, exposes more th
 stage/cumulative latency scalar series, uses run-scoped artifact names, and includes scene-graph and Markdown records.
 The earlier complete runs `2my1vsxu` and `7yy18id3` remain valid but are superseded for dashboard review. GPU diagnosis
 and the dashboard contract are documented in `docs/GPU_AND_OBSERVABILITY.md`.
+
+## Downloaded W&B record snapshot
+
+The promoted run record was downloaded through the W&B API on 2026-06-29 and verified in `finished` state. Its persisted
+summary reports one detection/slot with geometry attached, finite JEPA features, 38.707011 s end-to-end latency, 26.658866
+s geometry, 5.260406 s grounding, 3.630110 s V-JEPA extraction, and 0.491768 s persistence/reporting. W&B lists 14 logged
+artifacts covering tables, object slots/masks, world memory, scene graph, report, experiment record, and history.

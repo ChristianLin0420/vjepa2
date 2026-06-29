@@ -1,0 +1,24 @@
+dataset_id: tum-rgbd-fr1-xyz-phase2b
+version: 1.0.0
+revision: rgbd_dataset_freiburg1_xyz-2011-09-30
+sequence: rgbd_dataset_freiburg1_xyz
+license: CC-BY-4.0
+official: true
+source_url: https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_xyz.tgz
+archive:
+  bytes: 448204271
+  sha256: a0236d97b8c30cd93b653656d2b6c293ff7c982a4130ef2a1a8beecdb124ef98
+split_policy: chronological-nonoverlapping-frame-ranges
+train_indices: [20, 27, 35, 42, 50, 58, 65, 73, 80, 88, 96, 103, 111, 118, 126, 134, 141, 149, 156, 164, 172, 179, 187, 194, 202, 210, 217, 225, 232, 240, 248, 255, 263, 270, 278, 286, 293, 301, 308, 316, 324, 331, 339, 346, 354, 362, 369, 377, 384, 392, 400, 407, 415, 422, 430, 438, 445, 453, 460, 468, 476, 483, 491, 499]
+validation_indices: [520, 527, 535, 543, 551, 559, 567, 575, 583, 591, 599, 607, 615, 623, 631, 639]
+test_indices: [660, 677, 694, 711, 728, 745, 762, 779]
+camera:
+  model: TUM Freiburg 1 RGB
+  width: 640
+  height: 480
+  fx: 517.3
+  fy: 516.5
+  cx: 318.6
+  cy: 255.3
+depth_scale: 5000.0
+comparison_schema: jepa4d-phase2b-comparison-v1

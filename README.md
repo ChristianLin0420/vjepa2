@@ -1,10 +1,14 @@
 
-> JEPA-4D extension status: Phases 0–3 and the initial Phase 4 persistent-memory substrate are implemented alongside the
-> original V-JEPA 2 code. See [architecture](docs/ARCHITECTURE.md), [Phase 3 design](docs/DESIGN_PHASE03_OBJECT_SLOTS.md),
+> JEPA-4D extension status: Phases 0–1 and the Phase-2 VGGT teacher baseline are complete; initial substrates for Phases
+> 3–6 are implemented alongside the original V-JEPA 2 code. See [architecture](docs/ARCHITECTURE.md),
+> [Phase 2 design](docs/DESIGN_PHASE02_GEOMETRY.md), [Phase 3 design](docs/DESIGN_PHASE03_OBJECT_SLOTS.md),
 > [Phase 4 memory design](docs/DESIGN_PHASE04_MEMORY.md), [API](docs/API.md),
 > [identity evaluation](docs/DESIGN_IDENTITY_EVALUATION.md),
 > [GPU and observability](docs/GPU_AND_OBSERVABILITY.md), and the
 > [initial Phase 3 experiment](docs/experiments/2026-06-29-phase3-object-grounding.md).
+> Phase 2b's versioned teacher/RGB/final-/multi-layer comparison is implemented but its first training run is explicitly
+> blocked pending recovery of the unstable A100 PCIe link; see the
+> [prepared experiment record](docs/experiments/2026-06-29-phase2b-prepared-blocked.md).
 
 🆕 **[2026-03-16]:** :fire: V-JEPA 2.1 is released :fire: A new familly of models trained with a novel recipe that learns high quality and temporolly consistent dense features !!!
 
@@ -14,8 +18,8 @@ This fork adds an RGB-first, view/time-aware 4D world-model substrate under [`je
 upstream V-JEPA implementation. Phase 0/1 includes typed single-image, multi-view, and video inputs; deterministic CPU
 mocks; real V-JEPA 2.1 dense and multi-layer feature extraction; Zarr/PyTorch artifacts; interactive HTML reports;
 detailed optional W&B observability; a structured query API; and CPU tests. Phase 2 adds probabilistic geometry beliefs
-through a deterministic mock or official VGGT, including cameras, depth, point maps, tracks, uncertainty, NPZ/PLY export,
-and an interactive 3D report.
+through a deterministic mock or official VGGT, including cameras, depth, point maps, tracks, uncertainty, NPZ/PLY/COLMAP
+export, an official TUM RGB-D mini-benchmark, held-out variance calibration, A100 profiles, and an interactive 3D report.
 
 ```bash
 pip install -e '.[dev]'
@@ -27,9 +31,9 @@ uvicorn jepa4d.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/API.md`](docs/API.md), and
-[`docs/ROADMAP.md`](docs/ROADMAP.md). Object grounding, persistent 4D fusion, dynamics, and robot integrations remain
-staged until feature and geometry quality are independently benchmarked. The VGGT adapter, confidence policy, official
-smoke results, and limitations are recorded in [`docs/DESIGN_PHASE02_GEOMETRY.md`](docs/DESIGN_PHASE02_GEOMETRY.md).
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Object grounding, persistent 4D fusion, and verified-planning substrates are present;
+their model-quality and simulator gates remain open. The VGGT adapter, confidence policy, official subset results, and
+limitations are recorded in [`docs/DESIGN_PHASE02_GEOMETRY.md`](docs/DESIGN_PHASE02_GEOMETRY.md).
 
 **[2025-06-25]:** V-JEPA 2 is released. [[`Blog`](https://ai.meta.com/blog/v-jepa-2-world-model-benchmarks)]
 

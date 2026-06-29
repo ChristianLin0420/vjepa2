@@ -2,8 +2,10 @@
 
 ## Status
 
-Implemented as a research substrate on 2026-06-29. Official VGGT single- and three-view inference has been executed.
-Dataset accuracy and uncertainty calibration remain follow-up work.
+The VGGT teacher baseline was completed on 2026-06-29. In addition to official single-/three-view inference, the phase
+now includes an immutable official TUM RGB-D mini subset, held-out calibration/test frames, depth/point/pose metrics,
+coordinate-convention tests, COLMAP export, and A100 FP32/BF16 scaling. Cross-dataset generalization and the learned JEPA
+student remain separate follow-up claims.
 
 ## Goal
 
@@ -77,8 +79,9 @@ a hosted dependency.
 ## W&B schema
 
 Geometry runs log input view/time counts, runtime, depth moments/histogram/map, depth uncertainty and p95, scale/pose/
-reconstruction confidence, point finite fraction and XYZ extents, track count, NPZ, PLY, and HTML. Run names encode backend
-and input mode. Local Markdown is always written.
+reconstruction confidence, point finite fraction and XYZ extents, track count, peak CUDA memory, NPZ, PLY, COLMAP, and
+HTML. The official-subset run additionally logs per-sample metrics, calibration, failures, and precision/view-count
+profiles. Run names encode backend and input mode. Local Markdown is always written.
 
 ## Real smoke results
 
@@ -90,7 +93,8 @@ On a 16-thread Xeon Silver 4208 CPU with 62 GiB RAM:
 - checkpoint SHA-256: `f164acf60724910d8fe1578bb499d800850c7bb0948db7555c413f9fbe60467e`;
 - promoted W&B run: `l6nfxczi`.
 
-These are correctness measurements. GPU latency must be profiled before robotics use.
+These remain CPU correctness measurements. The subsequent A100 run `rcpsxq6g` supplies the GPU profile and quality
+evidence summarized in the experiment record.
 
 ## Alternatives considered
 
@@ -103,18 +107,25 @@ These are correctness measurements. GPU latency must be profiled before robotics
 
 ## Known limitations
 
-- confidence is uncalibrated;
+- scene-level scale/pose/reconstruction confidence remains heuristic; only dense variance rescaling has a tiny held-out
+  calibration result;
 - input resize currently stretches to square rather than reproducing every official crop/pad mode;
 - provided input calibration is not yet fed into VGGT, only reflected in output confidence/mock geometry;
 - real tracks are queried on a fixed grid;
 - track visibility/confidence are not yet preserved in the public belief;
-- no COLMAP export or bundle adjustment;
+- COLMAP text export is available, but bundle adjustment is not integrated;
 - no metric frame registration to robot odometry;
 - no batched variable-resolution scene support;
 - no JEPA geometry student training yet.
 
 ## Phase 2 completion gate
 
-The adapter implementation is complete when contracts, mock, official single/multi-view smoke, exports, reports, W&B,
-tests, and docs pass. Scientific completion additionally requires dataset metrics, calibration, coordinate validation,
-CUDA profiling, and student ablations.
+The teacher phase is complete when contracts, mock and official inference, exports, reports, W&B, tests, official-subset
+metrics, held-out calibration, coordinate validation, and CUDA profiling pass. Those gates are met by run `rcpsxq6g` and
+the pinned TUM manifest. Student ablations belong to Phase 2b and must pass their own teacher/non-JEPA trade-off gate before
+the proposal's H2 claim can be evaluated.
+
+The completion claim is deliberately bounded: the current official subset contains eight frames from one sequence;
+depth/point metrics use per-frame median scale alignment; pose uses Sim(3) alignment; and uncertainty calibration is a
+variance rescaling learned on four frames and evaluated on four different frames. It is enough to close the teacher
+contract and evaluation path, not enough to claim metric scale, independent-scene generalization, or robot safety.

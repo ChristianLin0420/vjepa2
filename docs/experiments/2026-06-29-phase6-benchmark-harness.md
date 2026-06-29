@@ -83,3 +83,11 @@ The CUDA skips reflect the host A100 returning to PCI revision `ff`, not test fa
 2. Add per-scene predictions and paired baseline comparisons.
 3. Expand official adapters across grounding, identity, memory, and simulator planning.
 4. Define evaluation-server schemas, validation, resource limits, and leaderboard policy.
+
+## Downloaded W&B record snapshot
+
+The promoted run record was downloaded through the W&B API on 2026-06-29 and verified in `finished` state. Its persisted
+summary reports six completed stages, zero total failures, five successes for the final stage, identity evidence gap
+0.561404, memory query latency 0.077606 ms, and task/recovery success 1.0. W&B lists eight logged artifacts covering the
+stage/metric/failure tables, JSON report, failure record, HTML dashboard, experiment record, and run history. The remote
+configuration continues to label this evidence `contract-only`.
