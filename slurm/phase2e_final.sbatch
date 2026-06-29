@@ -16,6 +16,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
+export PYTHONUTF8=1
 bootstrap="${JEPA4D_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"
 if [[ ! -f "$bootstrap/slurm/lib.sh" && -f "$bootstrap/../slurm/lib.sh" ]]; then bootstrap="$bootstrap/.."; fi
 [[ -f "$bootstrap/slurm/lib.sh" ]] || exit 2

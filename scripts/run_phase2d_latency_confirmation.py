@@ -374,7 +374,7 @@ main{{max-width:1280px;margin:auto;padding:32px}} h1{{margin-bottom:4px}} .sub{{
 	<div class='cards'>{cards}</div><span class='badge'>{badge} ≤1.10× gate</span>
 	<div class='note'>This profiling-only confirmation does not retroactively change the Phase 2c decision. Deployment and capture-all arithmetic paths are reported separately.</div>
 	<div class='panel'>{plot}</div><div class='panel'><h2>Allocation and GPU telemetry</h2><table>{telemetry_rows}</table></div></main></body></html>"""
-    path.write_text(html)
+    path.write_text(html, encoding="utf-8")
 
 
 def main(

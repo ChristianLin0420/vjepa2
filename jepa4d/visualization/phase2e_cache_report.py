@@ -276,5 +276,5 @@ hash-bound artifacts. VGGT is executed only for the two training views.</div>
 <h2>Reproducibility record</h2><pre>{audit}</pre>
 </main></body></html>"""
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(document)
+    output.write_text(document, encoding="utf-8")
     return output

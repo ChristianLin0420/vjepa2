@@ -417,5 +417,5 @@ learned-vs-zero is the direct causal test of whether the selected checkpoint's g
 <h2>Auditable source and protocol</h2><pre>{metadata_json}</pre>
 </main></body></html>"""
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(document)
+    output.write_text(document, encoding="utf-8")
     return output

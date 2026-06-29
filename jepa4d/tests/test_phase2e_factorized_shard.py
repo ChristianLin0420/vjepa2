@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +83,7 @@ def _cache(path: Path, *, paired: bool = True, teacher: bool = True, include_tes
 
 
 @pytest.fixture
-def one_cpu_thread() -> None:
+def one_cpu_thread() -> Iterator[None]:
     previous = torch.get_num_threads()
     torch.set_num_threads(1)
     try:
@@ -182,7 +183,23 @@ def test_monolithic_phase2e_loss_is_exactly_the_comparable_base_geometry_loss() 
 def test_training_shard_runs_strict_reload_and_writes_self_contained_evidence(
     tmp_path: Path,
     one_cpu_thread: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    html_write_encodings: list[str | None] = []
+    original_write_text = Path.write_text
+
+    def tracked_write_text(
+        path: Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> int:
+        if path.suffix == ".html":
+            html_write_encodings.append(encoding)
+        return original_write_text(path, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", tracked_write_text)
     cache = _cache(tmp_path / "cache.pt")
     output = tmp_path / "output"
     shard = run_training_shard(
@@ -198,6 +215,7 @@ def test_training_shard_runs_strict_reload_and_writes_self_contained_evidence(
         run_name="synthetic-phase2e",
     )
     assert shard["status"] == "success"
+    assert html_write_encodings == ["utf-8"]
     assert shard["selection_split"] == "validation"
     assert len(shard["config_sha256"]) == 64
     assert len(shard["resolved_config_file_sha256"]) == 64

@@ -798,7 +798,7 @@ code{{color:#8be9fd}}
 <h2>Fixed first-validation-sample diagnostics</h2>{"".join(panels)}
 </body></html>"""
     path = output / "phase2e_report.html"
-    path.write_text(document)
+    path.write_text(document, encoding="utf-8")
     return path
 
 

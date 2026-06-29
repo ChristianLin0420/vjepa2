@@ -1327,7 +1327,7 @@ def write_phase2d_outputs(report: Mapping[str, Any], output: Path) -> dict[str, 
     _write_csv(oracle_csv, oracle_rows, oracle_fields)
     calibration_rows = _calibration_rows(report)
     _write_csv(calibration_csv, calibration_rows, list(calibration_rows[0]))
-    html_path.write_text(render_phase2d_html(report))
+    html_path.write_text(render_phase2d_html(report), encoding="utf-8")
     return {
         "json": str(json_path),
         "oracle_csv": str(oracle_csv),

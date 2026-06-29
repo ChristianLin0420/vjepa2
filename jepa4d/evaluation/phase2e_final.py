@@ -1310,7 +1310,7 @@ table{{border-collapse:collapse;width:100%}}th,td{{padding:9px;border-bottom:1px
 <section><h2>Fixed qualitative panels · seed 0, correct K</h2>{"".join(qualitative)}</section>
 <section><h2>Interpretation boundary</h2><p>This is a fixed operational gate over the registered formal runs. It is not a population-significance claim.</p></section>
 </main></body></html>"""
-    path.write_text(document)
+    path.write_text(document, encoding="utf-8")
     return path
 
 
