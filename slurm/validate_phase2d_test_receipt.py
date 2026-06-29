@@ -39,8 +39,9 @@ def validate_receipt(repo_root: Path, receipt_path: Path) -> dict[str, object]:
         for key in ("SLURM_JOB_ID", "SLURM_JOB_NAME", "SLURM_JOB_PARTITION", "SLURM_JOB_NODELIST")
     ):
         raise RuntimeError("test receipt is not bound to a complete Slurm allocation")
-    if slurm["SLURM_JOB_PARTITION"] not in ALLOWED_PARTITIONS:
-        raise RuntimeError("test receipt used a partition outside the approved Phase 2d/2e set")
+    requested_partitions = [value.strip() for value in slurm["SLURM_JOB_PARTITION"].split(",")]
+    if not requested_partitions or any(not value or value not in ALLOWED_PARTITIONS for value in requested_partitions):
+        raise RuntimeError("test receipt requested a partition outside the approved Phase 2d/2e set")
     if receipt.get("torch") != torch.__version__ or receipt.get("cuda_build") != torch.version.cuda:
         raise RuntimeError("current PyTorch/CUDA build differs from the passing test environment")
     cuda_identity = receipt.get("cuda_report")

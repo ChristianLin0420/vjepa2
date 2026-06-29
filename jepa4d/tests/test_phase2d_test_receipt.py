@@ -62,6 +62,24 @@ def test_validate_receipt_checks_runtime_and_cuda_evidence(tmp_path: Path) -> No
     assert validate_receipt(repo, receipt)["status"] == "pass"
 
 
+def test_validate_receipt_accepts_approved_partition_request_list(tmp_path: Path) -> None:
+    repo, receipt_path, _ = _receipt_fixture(tmp_path)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["slurm"]["SLURM_JOB_PARTITION"] = "polar4,polar3,polar,batch_block1"
+    receipt_path.write_text(json.dumps(receipt) + "\n")
+    assert validate_receipt(repo, receipt_path)["status"] == "pass"
+
+
+@pytest.mark.parametrize("partitions", ["polar4,unapproved", "polar4,,polar3", ""])
+def test_validate_receipt_rejects_unapproved_partition_request_list(tmp_path: Path, partitions: str) -> None:
+    repo, receipt_path, _ = _receipt_fixture(tmp_path)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["slurm"]["SLURM_JOB_PARTITION"] = partitions
+    receipt_path.write_text(json.dumps(receipt) + "\n")
+    with pytest.raises(RuntimeError, match="partition outside|complete Slurm allocation"):
+        validate_receipt(repo, receipt_path)
+
+
 def test_validate_receipt_rejects_changed_cuda_report(tmp_path: Path) -> None:
     repo, receipt, cuda = _receipt_fixture(tmp_path)
     cuda.write_text("{}\n")
