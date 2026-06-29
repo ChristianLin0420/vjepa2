@@ -11,6 +11,7 @@ result changes a design decision; do not copy every scalar into it.
 | Representation | Real V-JEPA 2.1 integration | Local ViT-B produces finite multi-layer image/video features and supports a real CUDA handoff. | Keep V-JEPA as the representation substrate. | Official frozen-probe subsets and layer ablations. |
 | Geometry | Official TUM RGB-D mini subset on A100 | VGGT gives strong aligned depth/point and translation structure on one sequence; orientation is weaker, raw variance needs large rescaling, and BF16 is much faster. | Freeze VGGT-1B as the measured teacher while preserving the aligned/single-sequence claim boundary. | Expand geometry evaluation to independent sequences and scenes. |
 | Geometry student | Three-seed TUM RGB-D training and held-out evaluation on Slurm A100 | The final V-JEPA layer reaches 0.07523 ± 0.00384 AbsRel versus RGB 0.19417 and VGGT 0.12034, with 8.30× teacher speedup and 14.44× lower encoder peak memory. The fixed four-layer average is 4.44% worse on the primary metric but improves several secondary metrics. | Use the final layer by default; retain VGGT when aligned fidelity dominates and test learned fusion separately. | Independent scenes plus learned or validation-selected layer fusion. |
+| Cross-family geometry | Camera-family-blocked TUM training/validation and two held-out Freiburg-3 recordings | Learned fusion lowers final-layer macro AbsRel by 4.58% and improves both sequence means, but fixed averaging and RGB have better raw primary means. Gains mainly reduce scale error; aligned shape and uncertainty do not clearly improve. Candidate latency is 1.1655× final under the frozen profile. | Retain final by the registered gate; do not interpret three seeds as independent-scene evidence. | Fresh rotated/external camera families, scale-aware modeling, and an independently registered latency confirmation. |
 | Grounding | Real GroundingDINO integration | Teacher detections can become slots with JEPA and geometry evidence. Bootstrap association is not durable identity. | Preserve explicit evidence and verification boundaries. | SAM2 plus labeled detection/segmentation/tracking evaluation. |
 | Identity | DAVIS sequence-level ablation | V-JEPA appearance beats RGB appearance, but IoU-only remains stronger than current fusion. | Learn mask-weighted projections and motion-aware assignment; retain IoU. | Multiple sequences, occlusion strata, global assignment. |
 | Memory | Deterministic persistence lifecycle | Snapshot reload, event replay, histories, queries, and LOD agree on controlled updates. | Keep atomic records plus append-only events. | Long-duration real sequences, concurrency, and task-retention curves. |
@@ -22,10 +23,11 @@ result changes a design decision; do not copy every scalar into it.
 
 The repository now has an end-to-end, inspectable contract pipeline through representation, geometry, grounding, identity,
 persistent memory, verified planning, and benchmark aggregation. Phases 0–1 are implementation-complete at their stated
-scope. The Phase-2 VGGT teacher baseline and Phase-2b geometry student now have bounded single-sequence quality evidence.
-Phase 2b completed all nine registered training runs, selected the final-layer V-JEPA student, and rejected promotion of
-the fixed four-layer average on the primary metric. Phases 3–6 have useful initial substrates and real integration evidence
-where noted, but are not model-quality or production complete.
+scope. The Phase-2 VGGT teacher baseline, Phase-2b geometry student, and Phase-2c cross-family gate now have bounded
+quality evidence. Phase 2c completed all twelve registered training runs and rejected learned-fusion promotion solely on
+the latency condition. It also exposed camera-family metric-scale transfer as a larger issue than aligned depth shape.
+Phases 3–6 have useful initial substrates and real integration evidence where noted, but are not model-quality or
+production complete.
 
 The dominant scientific gaps are no longer interface construction. They are calibrated geometry/object uncertainty,
 identity under occlusion, long-duration memory quality, trained action-conditioned dynamics, simulator/hardware safety,
@@ -34,7 +36,7 @@ GPU tests and training now run through content-bound Slurm allocations; recurrin
 
 Priority order:
 
-1. repeat geometry/student evaluation on independent scenes and test learned or validation-selected layer fusion;
+1. repeat RGB/final/fixed/learned geometry evaluation on fresh independent camera families and target metric-scale transfer;
 2. add licensed official mini subsets for representation and the remaining stages;
 3. train or integrate real action-conditioned dynamics and evaluate repeated simulator recovery episodes;
 4. improve mask-weighted identity projection and measure long-sequence memory/calibration quality;
@@ -56,6 +58,10 @@ Priority order:
    AbsRel while improving several secondary metrics, so learned fusion needs its own registered evaluation.
 8. Login-node environment preparation and asset staging are appropriate, but GPU health, real-model equivalence,
    optimization, profiling, and formal training belong in reproducible Slurm allocations.
+9. Cross-family metric depth can fail mainly through absolute scale even when aligned shape is good. Raw and aligned
+   metrics, camera-family roles, and scale-error diagnostics must remain separate.
+10. Efficiency decisions near a hard threshold need randomized/interleaved profiling and enough repetitions; noisy
+    measurements still govern a frozen operational gate but should motivate a separately registered confirmation.
 
 ## Rejected shortcuts
 

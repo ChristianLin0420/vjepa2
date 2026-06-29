@@ -58,6 +58,22 @@ while it runs 8.30× faster with 14.44× lower encoder peak memory than VGGT. Th
 because its primary AbsRel is 4.44% worse at identical capacity and runtime, despite improvements in RMSE, aligned AbsRel,
 Delta-1, and calibrated NLL. This is one-sequence evidence; independent scenes and learned layer fusion remain future gates.
 
+## Phase 2c — cross-sequence geometry and learned fusion: complete
+
+The camera-family-blocked gate trains on two Freiburg-1 recordings, selects checkpoints on Freiburg-2, and evaluates an
+equal-weight macro over two held-out Freiburg-3 recordings. It adds exact bundle identities, train-only normalization,
+three-seed learned residual fusion, per-sequence metrics, co-resident end-to-end profiling, online W&B, and strict
+content-bound postflight.
+
+Learned fusion improves final-layer macro AbsRel from 0.43807 to 0.41801 and improves both sequence means, but its measured
+latency is 1.1655× final-only, above the frozen 1.10× threshold. It is therefore not promoted. Fixed averaging reaches
+0.41054 and RGB reaches 0.40425, while V-JEPA and VGGT retain much better aligned geometry than RGB. The evidence points
+to unseen-camera metric-scale transfer, not only representation shape, as the next geometry target.
+
+Next gate: evaluate RGB, final, fixed, and learned variants on fresh rotated camera-family or external sequences; add a
+preregistered randomized/interleaved latency confirmation and scale-aware modeling without reusing Freiburg-3 as fresh
+confirmation data.
+
 ## Phase 3 — object slots and grounding: initial substrate complete
 
 Delivered deterministic and real GroundingDINO detection backends, box masks, optional SAM2 image-prompt boundary,
