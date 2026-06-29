@@ -1,0 +1,11 @@
+phase: 2
+enabled: false
+backend: vggt
+model_id: facebook/VGGT-1B
+input_size: 518
+query_grid_size: 8
+precision: bfloat16
+requires_cuda_for_practical_runtime: true
+single_image_scale_confidence_ceiling: 0.25
+confidence_transform: score_over_score_plus_one
+exports: [npz, ply]

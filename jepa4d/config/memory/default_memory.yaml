@@ -1,0 +1,7 @@
+active_local_map:
+  radius_m: 5.0
+  frame_id: base_link
+global_scene_graph:
+  frame_id: map
+confidence_decay_seconds: 3600
+vector_backend: in_memory

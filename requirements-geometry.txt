@@ -1,0 +1,5 @@
+# Use a separate environment when strict official VGGT dependency resolution is required.
+-r requirements-cpu.txt
+numpy>=1.26,<2
+opencv-python<4.12
+vggt @ git+https://github.com/facebookresearch/vggt.git@a288dd0f14786c93483e45524328726ab7b1b4ce

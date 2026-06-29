@@ -1,0 +1,1 @@
+"""FastAPI world-model service."""

@@ -1,0 +1,16 @@
+torch
+torchvision
+numpy
+pillow
+pydantic
+pyyaml
+typer
+fastapi
+uvicorn
+plotly
+wandb
+safetensors
+transformers
+imageio
+imageio-ffmpeg
+zarr

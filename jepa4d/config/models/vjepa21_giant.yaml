@@ -1,0 +1,8 @@
+name: vjepa2_1_vit_giant_384
+resolution: 384
+patch_size: 16
+tubelet_size: 2
+embed_dim: 1408
+depth: 40
+intermediate_layers: [9, 19, 29, 39]
+checkpoint_key: target_encoder

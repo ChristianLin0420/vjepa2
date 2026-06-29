@@ -22,6 +22,17 @@ run_pretrain.py
 traces/
 third_party/*
 
+# JEPA-4D generated state
+.venv/
+checkpoints/
+outputs/
+wandb/
+*.zarr/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
 evals/simu_env_planning/local/
 evals/simu_env_planning/docker2/
 evals/simu_env_planning/docker/

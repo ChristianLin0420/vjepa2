@@ -1,0 +1,17 @@
+project: jepa4d-worldmodel
+seed: 0
+device: cpu
+model:
+  name: vjepa2_1_vit_base_384
+  frozen: true
+  mock: true
+input:
+  image_size: 384
+  max_frames: 16
+observability:
+  wandb:
+    enabled: false
+    project: jepa4d-worldmodel
+    mode: online
+  html_report: true
+output_dir: outputs

@@ -1,0 +1,8 @@
+-r requirements-cpu.txt
+timm
+einops
+decord
+iopath
+webdataset
+braceexpand
+opencv-python

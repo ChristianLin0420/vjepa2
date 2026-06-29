@@ -1,0 +1,14 @@
+name: geometry-smoke
+stage: geometry
+backend: mock
+inputs:
+  single_image_views: 1
+  multi_view_views: 2
+output_size: 28
+metrics:
+  - finite_fraction
+  - multiview_confidence_gain
+  - point_count
+limitations:
+  - deterministic mock geometry is an interface test, not an accuracy benchmark
+  - confidence calibration requires held-out real geometry

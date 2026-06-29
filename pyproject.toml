@@ -1,6 +1,76 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jepa4d-worldmodel"
+version = "0.1.0"
+description = "RGB-first hierarchical 4D robot world model built on V-JEPA 2.1"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "torch>=2.4",
+  "torchvision",
+  "numpy>=1.26",
+  "pillow>=10",
+  "pydantic>=2.8",
+  "pyyaml>=6",
+  "typer>=0.12",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "plotly>=5.24",
+  "wandb>=0.18",
+  "safetensors>=0.4",
+  "transformers>=5.0",
+  "imageio>=2.35",
+  "imageio-ffmpeg>=0.5",
+  "zarr>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.9", "mypy>=1.14", "pre-commit>=4"]
+upstream = ["timm", "einops", "decord", "iopath", "webdataset", "braceexpand", "opencv-python"]
+geometry = [
+  "numpy>=1.26,<2",
+  "opencv-python<4.12",
+  "vggt @ git+https://github.com/facebookresearch/vggt.git@a288dd0f14786c93483e45524328726ab7b1b4ce",
+]
+
+[project.scripts]
+jepa4d-encode = "jepa4d.cli.encode:app"
+
+[tool.setuptools.packages.find]
+include = ["jepa4d*", "src*", "app*", "evals*"]
+
+[tool.ruff]
+line-length = 119
+target-version = "py311"
+exclude = ["third_party", "checkpoints"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["jepa4d/tests/"]
+
+[[tool.mypy.overrides]]
+module = ["src.*", "app.*", "evals.*"]
+follow_imports = "skip"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["jepa4d/tests"]
+addopts = "-ra"
+
 [tool.isort]
-profile="black"
-line_length=119
+profile = "black"
+line_length = 119
 
 [tool.black]
 line-length = 119

@@ -1,6 +1,29 @@
 
 🆕 **[2026-03-16]:** :fire: V-JEPA 2.1 is released :fire: A new familly of models trained with a novel recipe that learns high quality and temporolly consistent dense features !!!
 
+## JEPA-4D WorldModel extension
+
+This fork adds an RGB-first, view/time-aware 4D world-model substrate under [`jepa4d/`](jepa4d) without moving the
+upstream V-JEPA implementation. Phase 0/1 includes typed single-image, multi-view, and video inputs; deterministic CPU
+mocks; real V-JEPA 2.1 dense and multi-layer feature extraction; Zarr/PyTorch artifacts; interactive HTML reports;
+detailed optional W&B observability; a structured query API; and CPU tests. Phase 2 adds probabilistic geometry beliefs
+through a deterministic mock or official VGGT, including cameras, depth, point maps, tracks, uncertainty, NPZ/PLY export,
+and an interactive 3D report.
+
+```bash
+pip install -e '.[dev]'
+pytest jepa4d/tests -q
+python scripts/run_demo_single_image.py --mock
+python scripts/run_demo_multiview.py --mock
+python scripts/run_demo_geometry.py --backend mock
+uvicorn jepa4d.server.app:app --host 0.0.0.0 --port 8000
+```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/API.md`](docs/API.md), and
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Object grounding, persistent 4D fusion, dynamics, and robot integrations remain
+staged until feature and geometry quality are independently benchmarked. The VGGT adapter, confidence policy, official
+smoke results, and limitations are recorded in [`docs/DESIGN_PHASE02_GEOMETRY.md`](docs/DESIGN_PHASE02_GEOMETRY.md).
+
 **[2025-06-25]:** V-JEPA 2 is released. [[`Blog`](https://ai.meta.com/blog/v-jepa-2-world-model-benchmarks)]
 
 

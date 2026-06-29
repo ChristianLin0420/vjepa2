@@ -1,0 +1,24 @@
+name: JEPA-4D CPU CI
+
+on:
+  push:
+    paths: ["jepa4d/**", "scripts/**", "pyproject.toml", ".github/workflows/jepa4d-ci.yaml"]
+  pull_request:
+    paths: ["jepa4d/**", "scripts/**", "pyproject.toml", ".github/workflows/jepa4d-ci.yaml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: ruff check jepa4d scripts
+      - run: pytest jepa4d/tests -q
+      - run: python scripts/run_demo_single_image.py --mock --output /tmp/jepa4d-single
+      - run: python scripts/run_demo_multiview.py --mock --output /tmp/jepa4d-multiview
+      - run: python scripts/run_demo_geometry.py --backend mock --output /tmp/jepa4d-geometry
+      - run: python scripts/run_eval_stagewise.py --config jepa4d/config/benchmarks/geometry_smoke.yaml --mock --output /tmp/jepa4d-benchmark

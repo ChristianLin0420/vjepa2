@@ -1,0 +1,12 @@
+name: phase1-smoke
+mock: true
+stages:
+  - representation
+inputs:
+  - single_image
+  - multi_view
+  - video
+metrics:
+  - finite_fraction
+  - output_shape
+  - temporal_cosine

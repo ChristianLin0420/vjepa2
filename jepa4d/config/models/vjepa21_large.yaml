@@ -1,0 +1,8 @@
+name: vjepa2_1_vit_large_384
+resolution: 384
+patch_size: 16
+tubelet_size: 2
+embed_dim: 1024
+depth: 24
+intermediate_layers: [5, 11, 17, 23]
+checkpoint_key: ema_encoder
