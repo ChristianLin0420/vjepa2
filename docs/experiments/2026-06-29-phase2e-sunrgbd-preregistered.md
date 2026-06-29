@@ -159,3 +159,13 @@ norms, validation raw/aligned/scale/NLL metrics, checkpoint selection, timing, a
 
 The promoted record must identify the exact execution commit and job dependency graph. No external script/CDN dependency is
 allowed in final HTML.
+
+## Post-execution addendum
+
+The final clean DAG completed under commit `547ecc1ee2d2cc40863c179b625ce7952010a94d`; all eight canonical jobs
+completed `0:0`, strict postflight passed, and final W&B run
+[89ugevtp](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/89ugevtp) uploaded the hash-bound evaluation. The execution
+completed but the fixed scientific promotion gate failed with five passes and four failures, so
+`factorized_full_teacher` is not promoted. The protocol above is unchanged. Exact results, the non-identifiable
+constant-`K` shuffle, retry history, and
+claim boundaries are recorded in [2026-06-29-phase2e-sunrgbd.md](2026-06-29-phase2e-sunrgbd.md).

@@ -103,3 +103,11 @@ record. External JavaScript/CDN dependencies are forbidden in promoted HTML.
 Phase 2d completes only if all three experiments finish, source hashes match, all values are finite, the full prediction
 scope is explicit, all 12 latency jobs and their aggregate are present, online W&B artifacts are confirmed, and strict
 postflight finds zero failures. Scientific interpretation is deferred to the completed experiment record.
+
+## Post-execution addendum
+
+The frozen protocol completed under commit `160207418112bb18c8d6d1c4c6c8b7082ea8d114`; all canonical jobs completed
+`0:0`, strict postflight passed, and final W&B run
+[q1m52wi1](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/q1m52wi1) uploaded the hash-bound aggregate. The protocol
+above is unchanged. Results and interpretation are recorded in
+[2026-06-29-phase2d-diagnostics.md](2026-06-29-phase2d-diagnostics.md).

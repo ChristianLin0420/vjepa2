@@ -12,6 +12,8 @@ result changes a design decision; do not copy every scalar into it.
 | Geometry | Official TUM RGB-D mini subset on A100 | VGGT gives strong aligned depth/point and translation structure on one sequence; orientation is weaker, raw variance needs large rescaling, and BF16 is much faster. | Freeze VGGT-1B as the measured teacher while preserving the aligned/single-sequence claim boundary. | Expand geometry evaluation to independent sequences and scenes. |
 | Geometry student | Three-seed TUM RGB-D training and held-out evaluation on Slurm A100 | The final V-JEPA layer reaches 0.07523 ± 0.00384 AbsRel versus RGB 0.19417 and VGGT 0.12034, with 8.30× teacher speedup and 14.44× lower encoder peak memory. The fixed four-layer average is 4.44% worse on the primary metric but improves several secondary metrics. | Use the final layer by default; retain VGGT when aligned fidelity dominates and test learned fusion separately. | Independent scenes plus learned or validation-selected layer fusion. |
 | Cross-family geometry | Camera-family-blocked TUM training/validation and two held-out Freiburg-3 recordings | Learned fusion lowers final-layer macro AbsRel by 4.58% and improves both sequence means, but fixed averaging and RGB have better raw primary means. Gains mainly reduce scale error; aligned shape and uncertainty do not clearly improve. Candidate latency is 1.1655× final under the frozen profile. | Retain final by the registered gate; do not interpret three seeds as independent-scene evidence. | Fresh rotated/external camera families, scale-aware modeling, and an independently registered latency confirmation. |
+| Fusion diagnostics | Same-checkpoint interventions, target-fitted scale oracles, and 12 independent A100 latency jobs | Original and zeroed learned gates differ by only `0.000081` raw AbsRel. A per-image scalar oracle reduces raw AbsRel from `0.41801` to `0.16046`; learned/final latency is tightly `1.02262×`. Camera correction provenance remains incomplete. | Reject a learned-gate causal explanation and keep Phase 2c's final-layer decision unchanged. | Treat scale recovery as a separate estimand and complete camera provenance before causal camera claims. |
+| Factorized sensor transfer | Eight variants × three seeds on sensor-blocked SUNRGBD, with untouched kv2 final evaluation | The candidate improves raw/aligned AbsRel by `2.67%/6.22%` but worsens scale error by `13.82%`, calibrated NLL by `0.0675`, and head latency to `9.3578×`. Correct and shuffled `K` are identical because all kv2 samples share one intrinsic matrix. | Execution succeeds but promotion fails; do not continue `factorized_full_teacher` unchanged. | [Phase 2f proposal](2026-06-29-phase2f-scale-camera-proposal.md): detached scale, identifiable camera controls, latency-first screening, and a fresh final set. |
 | Grounding | Real GroundingDINO integration | Teacher detections can become slots with JEPA and geometry evidence. Bootstrap association is not durable identity. | Preserve explicit evidence and verification boundaries. | SAM2 plus labeled detection/segmentation/tracking evaluation. |
 | Identity | DAVIS sequence-level ablation | V-JEPA appearance beats RGB appearance, but IoU-only remains stronger than current fusion. | Learn mask-weighted projections and motion-aware assignment; retain IoU. | Multiple sequences, occlusion strata, global assignment. |
 | Memory | Deterministic persistence lifecycle | Snapshot reload, event replay, histories, queries, and LOD agree on controlled updates. | Keep atomic records plus append-only events. | Long-duration real sequences, concurrency, and task-retention curves. |
@@ -23,20 +25,22 @@ result changes a design decision; do not copy every scalar into it.
 
 The repository now has an end-to-end, inspectable contract pipeline through representation, geometry, grounding, identity,
 persistent memory, verified planning, and benchmark aggregation. Phases 0–1 are implementation-complete at their stated
-scope. The Phase-2 VGGT teacher baseline, Phase-2b geometry student, and Phase-2c cross-family gate now have bounded
-quality evidence. Phase 2c completed all twelve registered training runs and rejected learned-fusion promotion solely on
-the latency condition. It also exposed camera-family metric-scale transfer as a larger issue than aligned depth shape.
-Phases 3–6 have useful initial substrates and real integration evidence where noted, but are not model-quality or
-production complete.
+scope. The Phase-2 VGGT teacher baseline, Phase-2b geometry student, Phase-2c cross-family gate, Phase-2d causal audit, and
+Phase-2e sensor-blocked benchmark now provide a bounded geometry evidence chain. Phase 2d showed that the learned fusion
+gates were not the cause of the observed behavior and confirmed that their true latency overhead is small. Phase 2e then
+showed that explicit factorization can improve held-out shape/raw error, but the current scale head, camera control, and
+dense-ray implementation are not promotable. Phases 3–6 have useful initial substrates and real integration evidence where
+noted, but are not model-quality or production complete.
 
-The dominant scientific gaps are no longer interface construction. They are calibrated geometry/object uncertainty,
-identity under occlusion, long-duration memory quality, trained action-conditioned dynamics, simulator/hardware safety,
-and official independent benchmark subsets. The prior single-host A100 failure is no longer a launch blocker because
-GPU tests and training now run through content-bound Slurm allocations; recurring Xid 79 remains an infrastructure risk.
+The dominant scientific gaps are no longer interface construction. They are identifiable and efficient metric-scale/camera
+modeling, calibrated geometry/object uncertainty, identity under occlusion, long-duration memory quality, trained
+action-conditioned dynamics, simulator/hardware safety, and official independent benchmark subsets. The prior single-host
+A100 failure is no longer a launch blocker because GPU tests and training now run through content-bound Slurm allocations;
+recurring Xid 79 remains an infrastructure risk.
 
 Priority order:
 
-1. repeat RGB/final/fixed/learned geometry evaluation on fresh independent camera families and target metric-scale transfer;
+1. preregister Phase 2f with detached global scale, paired camera perturbations, component latency gates, and a fresh final set;
 2. add licensed official mini subsets for representation and the remaining stages;
 3. train or integrate real action-conditioned dynamics and evaluate repeated simulator recovery episodes;
 4. improve mask-weighted identity projection and measure long-sequence memory/calibration quality;
@@ -62,6 +66,18 @@ Priority order:
    metrics, camera-family roles, and scale-error diagnostics must remain separate.
 10. Efficiency decisions near a hard threshold need randomized/interleaved profiling and enough repetitions; noisy
     measurements still govern a frozen operational gate but should motivate a separately registered confirmation.
+11. Same-checkpoint interventions are stronger causal evidence than retrained comparisons: Phase 2d's original and zeroed
+    gates are effectively identical, so the Phase 2c result must not be credited to gate adaptation.
+12. A validation sensor can select the wrong scale mechanism for a new sensor. Bias-only scale was best on RealSense
+    validation (`0.26153` raw AbsRel) but collapsed to `0.26972` on kv2 versus the monolithic `0.19407`.
+13. A control is useful only if it changes the treatment. Shuffling a single unique `K` is the identity operation; future
+    camera claims need paired crop/resize transforms or a genuinely multi-intrinsics test.
+14. Parameter count is not a runtime proxy. Phase 2e stayed within the `1.10×` parameter cap but its dense camera/ray path
+    took `9.36×` the baseline head latency, so component profiling must precede formal training.
+15. Uncertainty ranking and calibration are distinct. The candidate improves AUSE while worsening calibrated NLL; both must
+    remain separate gates, with calibration fitted only on validation.
+16. A completed, postflight-clean pipeline is not a promoted model. Phase 2e execution passed while its operational model
+    gate correctly failed.
 
 ## Rejected shortcuts
 
@@ -71,3 +87,6 @@ Priority order:
 - Do not mark a subgoal complete from a control return without fresh observational evidence.
 - Do not promote deterministic smoke scores or degenerate intervals as model-quality benchmarks.
 - Do not let online dashboards become the only copy of results or decisions.
+- Do not claim camera sensitivity from a shuffled-`K` control when the split contains one unique intrinsic matrix.
+- Do not infer deployability from parameter count without synchronized component and end-to-end latency.
+- Do not reuse the opened Phase 2e kv2 test as an untouched Phase 2f final set.
