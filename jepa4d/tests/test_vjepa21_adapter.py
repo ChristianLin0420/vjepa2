@@ -7,6 +7,10 @@ import torch
 from jepa4d.data.rgb_input import from_view_sequences
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
 
+PHASE2B_ASSETS = Path("checkpoints/phase2b_assets")
+LOCAL_CHECKPOINT = PHASE2B_ASSETS / "vjepa2.1-vitb-fpc64-384"
+LOCAL_IMPLEMENTATION = PHASE2B_ASSETS / "vjepa21_hf_impl"
+
 
 def frames(count: int) -> list[np.ndarray]:
     return [np.full((48, 64, 3), index * 10, dtype=np.uint8) for index in range(count)]
@@ -39,13 +43,15 @@ def test_mock_can_disable_intermediate_capture() -> None:
 
 
 @pytest.mark.skipif(
-    not Path("checkpoints/vjepa2.1-vitb-fpc64-384/model.safetensors").exists(), reason="local model absent"
+    not (LOCAL_CHECKPOINT / "model.safetensors").is_file()
+    or not (LOCAL_IMPLEMENTATION / "modeling_vjepa21.py").is_file(),
+    reason="matched local model and implementation assets are absent",
 )
 def test_local_real_checkpoint() -> None:
     batch = from_view_sequences([frames(1)])
     extractor = VJEPA21FeatureExtractor(
-        checkpoint="checkpoints/vjepa2.1-vitb-fpc64-384",
-        implementation_path="checkpoints/vjepa21_hf_impl",
+        checkpoint=LOCAL_CHECKPOINT,
+        implementation_path=LOCAL_IMPLEMENTATION,
     )
     bundle = extractor(batch)
     assert bundle.dense_tokens.shape == (1, 1, 1, 576, 768)
