@@ -24,6 +24,7 @@ third_party/*
 
 # JEPA-4D generated state
 .venv/
+.conda-gpu/
 checkpoints/
 outputs/
 wandb/

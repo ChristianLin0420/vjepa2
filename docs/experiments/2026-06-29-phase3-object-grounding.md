@@ -122,3 +122,28 @@ and the real smoke has no labeled ground truth.
 Install and pin official SAM2, run prompted masks on a versioned real image/video fixture, measure mask IoU and temporal
 identity, then build incremental durable track updates in Phase 4. In parallel, establish a small labeled multi-view
 fixture with two same-category instances to quantify false merges and ID switches.
+
+## Logging remediation and full real pipeline
+
+After review, the initial run was judged incomplete because W&B started after feature extraction, geometry inference, and
+teacher construction. The logger was moved before all heavyweight stages and expanded with feature, geometry, object,
+pipeline, hardware, table, distribution, overlay, and artifact panels. An offline serialization test passed before the
+replacement real run.
+
+Replacement full real run:
+
+- V-JEPA2.1 ViT-B: real local checkpoint;
+- geometry: real local VGGT-1B checkpoint;
+- detector: real GroundingDINO-tiny;
+- device: CPU, explicitly labeled because the A100 PCI device was unavailable;
+- end-to-end measured time: 38.707 seconds;
+- V-JEPA: 3.630 seconds;
+- VGGT geometry: 26.659 seconds;
+- GroundingDINO load/inference: 2.593/5.260 seconds;
+- persistence/report: 0.492 seconds;
+- W&B run: <https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/wvljbqlv>.
+
+The promoted v4 run synced 14 media files and 26 artifact files, exposes more than 70 scalar/summary fields, adds repeated
+stage/cumulative latency scalar series, uses run-scoped artifact names, and includes scene-graph and Markdown records.
+The earlier complete runs `2my1vsxu` and `7yy18id3` remain valid but are superseded for dashboard review. GPU diagnosis
+and the dashboard contract are documented in `docs/GPU_AND_OBSERVABILITY.md`.

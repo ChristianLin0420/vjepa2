@@ -69,6 +69,11 @@ class ExperimentLogger:
             )
             wandb.define_metric("inference/step")
             wandb.define_metric("inference/*", step_metric="inference/step")
+            wandb.define_metric("pipeline/step")
+            wandb.define_metric("pipeline/*", step_metric="pipeline/step")
+            wandb.define_metric("pipeline/timing_index")
+            wandb.define_metric("pipeline/stage_latency_s", step_metric="pipeline/timing_index")
+            wandb.define_metric("pipeline/cumulative_latency_s", step_metric="pipeline/timing_index")
             wandb.define_metric("training/global_step")
             wandb.define_metric("training/*", step_metric="training/global_step")
 
@@ -76,7 +81,9 @@ class ExperimentLogger:
     def url(self) -> str | None:
         return None if self.run is None else self.run.url
 
-    def log_feature_bundle(self, batch: RGBInputBatch, bundle: JEPATokenBundle, runtime: dict[str, float]) -> None:
+    def log_feature_bundle(
+        self, batch: RGBInputBatch, bundle: JEPATokenBundle, runtime: dict[str, float], *, step: int = 0
+    ) -> None:
         if not self.enabled:
             return
         import wandb
@@ -86,7 +93,9 @@ class ExperimentLogger:
         cosine = temporal_cosine(bundle)
         norms = dense.norm(dim=-1)
         scalars: dict[str, Any] = {
-            "inference/step": 0,
+            "inference/step": step,
+            "pipeline/step": step,
+            "pipeline/stage": "vjepa_features",
             "inference/runtime_total_s": runtime.get("total_s", 0.0),
             "inference/runtime_model_s": bundle.metadata.get("forward_seconds", 0.0),
             "inference/throughput_frames_per_s": batch.valid_mask.sum().item()
@@ -170,13 +179,16 @@ class ExperimentLogger:
         payload.update({f"training/{key}": value for key, value in (extra or {}).items()})
         self.run.log(payload)
 
-    def log_geometry_belief(self, batch: RGBInputBatch, belief: GeometryBelief) -> None:
+    def log_geometry_belief(self, batch: RGBInputBatch, belief: GeometryBelief, *, step: int = 1) -> None:
         """Log calibrated-belief diagnostics without conflating confidence with accuracy."""
         if not self.enabled:
             return
         import wandb
 
         payload: dict[str, Any] = {
+            "inference/step": step,
+            "pipeline/step": step,
+            "pipeline/stage": "geometry_belief",
             "geometry/runtime_s": belief.metadata.get("runtime_seconds", 0.0),
             "geometry/input_views": batch.images.shape[1],
             "geometry/input_steps": batch.images.shape[2],
@@ -230,19 +242,28 @@ class ExperimentLogger:
         if self.enabled:
             import wandb
 
-            artifact = wandb.Artifact(Path(path).stem, type=artifact_type)
+            artifact_name = f"{self.run.id}-{Path(path).stem}".replace("_", "-")
+            artifact = wandb.Artifact(artifact_name, type=artifact_type)
             if Path(path).is_dir():
                 artifact.add_dir(str(path))
             else:
                 artifact.add_file(str(path))
             self.run.log_artifact(artifact)
 
-    def log_object_grounding(self, batch: RGBInputBatch, result: ObjectGroundingResult) -> None:
+    def log_object_grounding(self, batch: RGBInputBatch, result: ObjectGroundingResult, *, step: int = 2) -> None:
         if not self.enabled:
             return
         import wandb
 
         scores = [observation.score for observation in result.observations]
+        mask_area_ratios = [float(observation.mask.mean()) for observation in result.observations]
+        image_area = batch.images.shape[-2] * batch.images.shape[-1]
+        box_area_ratios = [
+            max(0.0, observation.bbox_2d[2] - observation.bbox_2d[0])
+            * max(0.0, observation.bbox_2d[3] - observation.bbox_2d[1])
+            / image_area
+            for observation in result.observations
+        ]
         table = wandb.Table(
             columns=["object_id", "category", "observations", "detection", "association", "has_pose"],
             data=[
@@ -268,6 +289,9 @@ class ExperimentLogger:
             class_labels[class_id] = observation.category
         mask_payload: dict[str, Any] = {"predictions": {"mask_data": semantic_mask, "class_labels": class_labels}}
         payload: dict[str, Any] = {
+            "inference/step": step,
+            "pipeline/step": step,
+            "pipeline/stage": "object_grounding",
             "objects/runtime_s": result.metadata.get("runtime_seconds", 0.0),
             "objects/query_count": len(result.queries),
             "objects/detection_count": len(result.observations),
@@ -276,13 +300,135 @@ class ExperimentLogger:
             "objects/with_geometry_fraction": sum(slot.pose_map is not None for slot in result.slots)
             / max(len(result.slots), 1),
             "objects/slot_table": table,
+            "objects/mean_mask_area_ratio": float(np.mean(mask_area_ratios)) if mask_area_ratios else 0.0,
+            "objects/mean_box_area_ratio": float(np.mean(box_area_ratios)) if box_area_ratios else 0.0,
+            "objects/query_detection_coverage": len({value.category for value in result.observations})
+            / max(len(result.queries), 1),
+            "objects/model_load_s": result.metadata.get("model_load_seconds", 0.0),
         }
         if scores:
             payload["objects/detection_score_mean"] = float(np.mean(scores))
             payload["objects/detection_score_min"] = float(np.min(scores))
             payload["objects/detection_score_histogram"] = wandb.Histogram(scores)
+            payload["objects/mask_area_histogram"] = wandb.Histogram(mask_area_ratios)
+            payload["objects/box_area_histogram"] = wandb.Histogram(box_area_ratios)
+        observation_table = wandb.Table(
+            columns=[
+                "observation_id",
+                "view",
+                "time",
+                "camera",
+                "category",
+                "score",
+                "mask_area_ratio",
+                "box_area_ratio",
+                "has_pose",
+            ]
+        )
+        for observation, mask_ratio, box_ratio in zip(
+            result.observations, mask_area_ratios, box_area_ratios, strict=True
+        ):
+            observation_table.add_data(
+                observation.observation_id,
+                observation.view_index,
+                observation.time_index,
+                observation.camera_id,
+                observation.category,
+                observation.score,
+                mask_ratio,
+                box_ratio,
+                observation.pose_map is not None,
+            )
+        payload["objects/observation_table"] = observation_table
+        query_table = wandb.Table(columns=["query", "detections", "slots", "mean_score"])
+        for query in result.queries:
+            query_observations = [value for value in result.observations if value.category == query]
+            query_table.add_data(
+                query,
+                len(query_observations),
+                sum(slot.category == query for slot in result.slots),
+                float(np.mean([value.score for value in query_observations])) if query_observations else 0.0,
+            )
+        payload["objects/query_coverage"] = query_table
+        view_table = wandb.Table(columns=["view", "time", "detections"])
+        for view in range(batch.images.shape[1]):
+            for time_index in range(batch.images.shape[2]):
+                count = sum(
+                    value.view_index == view and value.time_index == time_index for value in result.observations
+                )
+                view_table.add_data(view, time_index, count)
+        payload["objects/detections_by_view_time"] = wandb.plot.bar(
+            view_table, "view", "detections", title="Detections by view (one bar per time entry)"
+        )
+        track_lengths = [len(slot.observations) for slot in result.slots]
+        if track_lengths:
+            payload["objects/track_length_histogram"] = wandb.Histogram(track_lengths)
         if visible_observations:
-            payload["objects/mask_overlay"] = wandb.Image(image, masks=mask_payload, caption="Grounded object masks")
+            box_payload = {
+                "predictions": {
+                    "box_data": [
+                        {
+                            "position": {
+                                "minX": observation.bbox_2d[0],
+                                "minY": observation.bbox_2d[1],
+                                "maxX": observation.bbox_2d[2],
+                                "maxY": observation.bbox_2d[3],
+                            },
+                            "class_id": class_id,
+                            "box_caption": f"{observation.category} {observation.score:.3f}",
+                            "scores": {"detector": observation.score},
+                        }
+                        for class_id, observation in enumerate(visible_observations, start=1)
+                    ],
+                    "class_labels": class_labels,
+                }
+            }
+            payload["objects/mask_and_box_overlay"] = wandb.Image(
+                image, masks=mask_payload, boxes=box_payload, caption="Grounded masks and detector boxes"
+            )
+        self.run.log(payload)
+
+    def log_pipeline_summary(self, timings: dict[str, float], *, step: int = 3) -> None:
+        """Log a stage timeline and an explicit hardware/runtime snapshot."""
+        if not self.enabled:
+            return
+        import wandb
+
+        timing_table = wandb.Table(
+            columns=["stage", "seconds"], data=[[name, value] for name, value in timings.items()]
+        )
+        cumulative = 0.0
+        for index, (name, value) in enumerate(timings.items()):
+            cumulative += value
+            self.run.log(
+                {
+                    "pipeline/timing_index": index,
+                    "pipeline/timing_stage": name,
+                    "pipeline/stage_latency_s": value,
+                    "pipeline/cumulative_latency_s": cumulative,
+                }
+            )
+        payload: dict[str, Any] = {
+            "inference/step": step,
+            "pipeline/step": step,
+            "pipeline/stage": "complete",
+            "pipeline/total_s": sum(timings.values()),
+            "pipeline/stage_timing_table": timing_table,
+            "pipeline/stage_timing_chart": wandb.plot.bar(
+                timing_table, "stage", "seconds", title="End-to-end stage latency"
+            ),
+            "system/cuda_available": int(torch.cuda.is_available()),
+            "system/device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+            "system/torch_cuda_build": torch.version.cuda or "none",
+        }
+        payload.update({f"pipeline/timing/{name}_s": value for name, value in timings.items()})
+        if torch.cuda.is_available():
+            payload.update(
+                {
+                    "system/gpu_peak_allocated_gb": torch.cuda.max_memory_allocated() / 2**30,
+                    "system/gpu_peak_reserved_gb": torch.cuda.max_memory_reserved() / 2**30,
+                }
+            )
         self.run.log(payload)
 
     def finish(self, summary: dict[str, Any] | None = None) -> None:
