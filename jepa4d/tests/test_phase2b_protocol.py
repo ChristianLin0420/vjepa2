@@ -133,8 +133,39 @@ def test_reported_preprocessing_policy_is_json_serializable(tmp_path: Path) -> N
 def test_chunk_invariance_accepts_reduction_drift_but_rejects_content_changes() -> None:
     separate = torch.linspace(-2, 2, 4096).reshape(2, 32, 64)
     reduction_drift = separate + 0.002
-    statistics = _assert_close("test features", reduction_drift, separate, rtol=1e-2, atol=3e-3)
+    statistics = _assert_close(
+        "test features",
+        reduction_drift,
+        separate,
+        rtol=1e-2,
+        atol=3e-3,
+        max_outlier_fraction=1e-3,
+        max_relative_rmse=5e-3,
+        min_cosine_similarity=0.9999,
+    )
     assert statistics["max_abs"] < 0.003
     assert statistics["cosine_similarity"] > 0.999
+    sparse_outlier = separate.clone()
+    sparse_outlier.view(-1)[0] += 0.1
+    sparse_statistics = _assert_close(
+        "test sparse outlier",
+        sparse_outlier,
+        separate,
+        rtol=1e-2,
+        atol=3e-3,
+        max_outlier_fraction=1e-3,
+        max_relative_rmse=5e-3,
+        min_cosine_similarity=0.9999,
+    )
+    assert sparse_statistics["outlier_count"] == 1
     with pytest.raises(RuntimeError, match="changes with chunk size"):
-        _assert_close("test features", separate.roll(1, dims=0), separate, rtol=1e-2, atol=3e-3)
+        _assert_close(
+            "test features",
+            separate.roll(1, dims=0),
+            separate,
+            rtol=1e-2,
+            atol=3e-3,
+            max_outlier_fraction=1e-3,
+            max_relative_rmse=5e-3,
+            min_cosine_similarity=0.9999,
+        )

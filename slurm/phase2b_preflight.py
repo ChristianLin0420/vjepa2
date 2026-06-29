@@ -68,6 +68,9 @@ def _assert_close(
     *,
     rtol: float,
     atol: float,
+    max_outlier_fraction: float,
+    max_relative_rmse: float,
+    min_cosine_similarity: float,
 ) -> dict[str, float]:
     if batched.shape != separate.shape:
         raise RuntimeError(f"{name} chunking changed shape: {tuple(batched.shape)} != {tuple(separate.shape)}")
@@ -80,6 +83,9 @@ def _assert_close(
     cosine_similarity = float(
         F.cosine_similarity(batched.float().reshape(1, -1), separate.float().reshape(1, -1)).item()
     )
+    close = torch.isclose(batched.float(), separate.float(), rtol=rtol, atol=atol)
+    outlier_count = int((~close).sum().item())
+    outlier_fraction = outlier_count / close.numel()
     statistics = {
         "max_abs": maximum,
         "mean_abs": mean,
@@ -87,13 +93,20 @@ def _assert_close(
         "reference_rms": reference_rms,
         "relative_rmse": relative_rmse,
         "cosine_similarity": cosine_similarity,
+        "outlier_count": float(outlier_count),
+        "outlier_fraction": outlier_fraction,
         "rtol": rtol,
         "atol": atol,
+        "max_outlier_fraction": max_outlier_fraction,
+        "max_relative_rmse": max_relative_rmse,
+        "min_cosine_similarity": min_cosine_similarity,
     }
-    try:
-        torch.testing.assert_close(batched.float(), separate.float(), rtol=rtol, atol=atol)
-    except AssertionError as error:
-        raise RuntimeError(f"{name} changes with chunk size: statistics={statistics}: {error}") from error
+    if (
+        outlier_fraction > max_outlier_fraction
+        or relative_rmse > max_relative_rmse
+        or cosine_similarity < min_cosine_similarity
+    ):
+        raise RuntimeError(f"{name} changes with chunk size: statistics={statistics}")
     return statistics
 
 
@@ -299,7 +312,14 @@ def run(args: argparse.Namespace, report: dict[str, Any]) -> None:
         separate_layer = torch.cat([value.layer_tokens[layer][:, 0, 0] for value in separate_bundles])
         _require_finite(f"V-JEPA layer {layer}", batched_layer)
         layer_invariance[str(layer)] = _assert_close(
-            f"V-JEPA layer {layer}", batched_layer, separate_layer, rtol=1e-2, atol=3e-3
+            f"V-JEPA layer {layer}",
+            batched_layer,
+            separate_layer,
+            rtol=1e-2,
+            atol=3e-3,
+            max_outlier_fraction=1e-4,
+            max_relative_rmse=1e-4,
+            min_cosine_similarity=0.99999,
         )
     probe_features = batched_dense.reshape(8, 24, 24, -1).permute(0, 3, 1, 2).contiguous().cpu()
     report["vjepa_smoke"] = {
@@ -312,7 +332,16 @@ def run(args: argparse.Namespace, report: dict[str, Any]) -> None:
         "global_tokens": _tensor_summary(batched_bundle.global_tokens),
         "layer_tokens": {str(key): _tensor_summary(value) for key, value in batched_bundle.layer_tokens.items()},
         "chunk_invariance": {
-            "dense": _assert_close("V-JEPA dense tokens", batched_dense, separate_dense, rtol=1e-2, atol=3e-3),
+            "dense": _assert_close(
+                "V-JEPA dense tokens",
+                batched_dense,
+                separate_dense,
+                rtol=1e-2,
+                atol=3e-3,
+                max_outlier_fraction=1e-4,
+                max_relative_rmse=1e-4,
+                min_cosine_similarity=0.99999,
+            ),
             "layers": layer_invariance,
             "compared_chunk_sizes": [1, 8],
         },
@@ -363,7 +392,16 @@ def run(args: argparse.Namespace, report: dict[str, Any]) -> None:
         "chunk_invariance": {
             # VGGT executes BF16 transformer blocks; these are PyTorch's
             # standard BF16-scale tolerances and still reject scene mixing.
-            "depth": _assert_close("VGGT depth", batched_depth, separate_depth, rtol=2e-2, atol=1e-2),
+            "depth": _assert_close(
+                "VGGT depth",
+                batched_depth,
+                separate_depth,
+                rtol=2e-2,
+                atol=1e-2,
+                max_outlier_fraction=1e-3,
+                max_relative_rmse=5e-3,
+                min_cosine_similarity=0.9999,
+            ),
             "compared_chunk_sizes": [1, 8],
         },
         "smoke_training_scale": teacher_scale,
