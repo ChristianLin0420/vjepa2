@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +16,7 @@ from jepa4d.memory.memory_update import FourDMemoryCore
 from jepa4d.memory.persistence import MemoryPersistence
 from jepa4d.models.object_slot_grounder import ObjectSlot
 from jepa4d.planning.query_api import WorldModelQueryAPI
+from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, PanelRecord, StageRecord
 from jepa4d.visualization.memory_report import build_memory_report
 from jepa4d.visualization.observability import ExperimentLogger
 
@@ -87,19 +87,39 @@ def main() -> None:
     }
     metrics_path = args.output / "metrics.json"
     metrics_path.write_text(json.dumps({"metrics": metrics, "updates": update_results}, indent=2) + "\n")
-    experiment_path = args.output / "EXPERIMENT.md"
-    experiment_path.write_text(
-        "# Phase 4 incremental memory demo\n\n"
-        f"- Timestamp: {datetime.now(UTC).isoformat()}\n"
-        f"- Updates/revision: `{args.steps}/{loaded.revision}`\n"
-        f"- Object observations: `{metrics['history_entries']}`\n"
-        f"- Episodic events: `{metrics['events']}`\n"
-        f"- Reload equals replay: `{metrics['reload_replay_equal']}`\n"
-        f"- Persistence: `{metrics['persistence']}`\n"
-        f"- W&B: {logger.url or 'disabled'}\n\n"
-        "The synthetic moving mug validates contracts, history, persistence, and queries; it is not a tracking-quality "
-        "result. One deliberately empty update models an occluded frame without hallucinating an observation.\n"
-    )
+    experiment_path = ExperimentRecord(
+        title="Phase 4 incremental memory demo",
+        experiment_id=f"memory-fixture-{args.steps}u",
+        stage="memory",
+        status="complete",
+        evidence_level="contract-only",
+        objective="Validate incremental updates, occlusion, queries, LOD, persistence reload, and event replay.",
+        hypothesis="Snapshot reload and event replay remain equal while an empty observation does not create evidence.",
+        decision="Promote the memory lifecycle contract, not tracking quality.",
+        wandb_url=logger.url,
+        config={"steps": args.steps, "fixture": "synthetic moving mug with one occluded step"},
+        stages=[
+            StageRecord("update", "FourDMemoryCore", "pass", "fixture observations", "revision history"),
+            StageRecord("persistence", "SQLite + replay", "pass", "events/snapshots", "equal restored states"),
+            StageRecord("query/LOD", "query API + LODPolicy", "pass", "restored memory", "results/compressed history"),
+        ],
+        panels=[
+            PanelRecord("memory/revision", "line", "Verify deterministic state progression."),
+            PanelRecord("memory/history_entries", "line", "Inspect evidence accumulation and the occluded step."),
+            PanelRecord("memory/mean_confidence", "line", "Inspect confidence through the episode."),
+            PanelRecord("memory/objects", "table", "Audit current object records."),
+            PanelRecord("memory/events", "table", "Audit episodic changes."),
+        ],
+        metrics=metrics,
+        artifacts=[
+            ArtifactRecord(snapshot_path, "JSON", "Serialized snapshot"),
+            ArtifactRecord(metrics_path, "JSON", "Machine-readable update metrics"),
+            ArtifactRecord(args.output / "memory.db", "SQLite", "Persistent memory"),
+            ArtifactRecord(report_path, "HTML", "Interactive lifecycle report"),
+        ],
+        limitations=["Synthetic observations validate contracts only and do not measure association accuracy."],
+        next_actions=["Drive the same lifecycle with real video observations and evaluate identity switches."],
+    ).write(args.output / "EXPERIMENT.md")
     for path, artifact_type in (
         (snapshot_path, "memory-snapshot"),
         (metrics_path, "memory-metrics"),

@@ -1,5 +1,35 @@
 # Real V-JEPA identity association ablation
 
+## Experiment metadata
+
+| Field | Value |
+|---|---|
+| Experiment ID | `2026-06-29-identity-davis-dogs-scale-v1` |
+| Stage / status | `identity / complete` |
+| Evidence level | `sequence-level` |
+| Promoted W&B run | [fw4rj25e](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/fw4rj25e) |
+| Decision | Retain V-JEPA appearance as a cue, retain IoU/geometry fusion, and learn a task projection before broader claims. |
+
+## W&B dashboard reading guide
+
+| Panel | What it answers | Observation | Insight / decision |
+|---|---|---|---|
+| `identity/results` | What does every dataset/variant/operating point score? | Controlled and DAVIS results are in one filterable table. | Use the table as the precise source, not chart tooltips. |
+| `identity/f1_comparison` | Which default cue improves association F1? | On DAVIS, RGB = 0.374, V-JEPA box = 0.609, IoU = 0.768. | V-JEPA is useful but does not replace spatial continuity. |
+| `identity/switch_comparison` | Does improved F1 also reduce identity switches? | Switch behavior is charted separately from F1. | Optimize both; aggregate F1 can hide damaging switches. |
+| `identity/operating_point_sweep` | How sensitive is fusion to appearance weight and threshold? | Thirty operating points are recorded. | Treat same-sequence selection as exploratory only. |
+| `identity/sweep_f1` | Is there a stable region rather than a lucky point? | The response surface is visible. | Choose thresholds on held-out sequences next. |
+
+## Stage insights and decisions
+
+| Stage | Evidence | Insight | Decision |
+|---|---|---|---|
+| Controlled crossing | Cue-specific diagnostic | Appearance can disambiguate overlap/crossing cases. | Preserve the fixture as a regression test. |
+| DAVIS appearance | V-JEPA F1 0.609 vs RGB 0.374 | Pretrained JEPA features are a stronger appearance cue on this sequence. | Continue V-JEPA association work. |
+| Spatial continuity | IoU F1 0.768 | Simple geometry remains the strongest default here. | Fuse rather than replace IoU. |
+| Hard-mask pooling | F1 0.513 | Naive masked pooling hurts relative to box pooling. | Investigate boundary/context-aware pooling instead. |
+| Sweep | Same-sequence exploratory selection | The best point is biased and not held-out evidence. | Split operating-point selection from evaluation. |
+
 ## Question
 
 Do frozen V-JEPA2.1 dense tokens improve persistent same-category object identity relative to RGB, IoU, and geometry

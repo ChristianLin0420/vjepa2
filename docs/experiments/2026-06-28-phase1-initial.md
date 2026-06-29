@@ -1,5 +1,33 @@
 # Phase 1 initial feature experiment — 2026-06-28
 
+## Experiment metadata
+
+| Field | Value |
+|---|---|
+| Experiment ID | `2026-06-28-representation-real-video-v1` |
+| Stage / status | `representation / complete` |
+| Evidence level | `integration` |
+| Promoted W&B run | [gisjdqvx](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/gisjdqvx) |
+| Decision | Retain real multi-layer V-JEPA 2.1 tokens as the common downstream substrate. |
+
+## W&B dashboard reading guide
+
+| Panel | What it answers | Observation | Insight / decision |
+|---|---|---|---|
+| `visualizations/input`, `visualizations/pca_rgb` | Are the input and dense spatial structure recognizable and aligned? | Both artifacts render for the promoted video. | Qualitative inspection is viable; PCA color is diagnostic, not semantic truth. |
+| `features/value_histogram`, `features/norm_histogram` | Are tokens finite, non-constant, or dominated by outliers? | Finite, non-degenerate distributions were recorded. | Preserve histogram logging alongside aggregate moments. |
+| `visualizations/temporal_consistency` | Do adjacent frames retain latent similarity? | A per-transition trace is available rather than one mean. | Use this as a diagnostic baseline, not a tracking metric. |
+| `features/layer_summary` and per-layer mean/std/norm | Which layers expose useful scale and variation? | Multiple requested layers were captured and tabulated. | Downstream ablations should name the source layer instead of assuming the final layer. |
+| `inference/*`, `system/*` | Is the run operationally usable? | Runtime, throughput, and system context were logged. | Compare later adapters against this feature-only floor. |
+
+## Stage insights and decisions
+
+| Stage | Evidence | Insight | Decision |
+|---|---|---|---|
+| RGB normalization | Valid video batch and input media | Unified input contracts survive real video preprocessing. | Reuse the same contract for geometry and grounding. |
+| V-JEPA inference | Finite dense/global/intermediate tokens | The real checkpoint path is functional. | Proceed to downstream adapters. |
+| Observability | Scalars, histograms, PCA, temporal trace, table, artifacts | No single plot is sufficient; the panel set exposes collapse, spatial structure, time, and layer choice. | Keep the full panel taxonomy for future representation experiments. |
+
 ## Objective
 
 Validate the Phase 0/1 contracts for single-image, multi-view, and short-video inputs, then execute a real local V-JEPA

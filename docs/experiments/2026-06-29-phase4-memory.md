@@ -1,5 +1,34 @@
 # Phase 4 initial persistent-memory experiment
 
+## Experiment metadata
+
+| Field | Value |
+|---|---|
+| Experiment ID | `2026-06-29-memory-incremental-replay-v1` |
+| Stage / status | `memory / complete` |
+| Evidence level | `contract-only` |
+| Promoted W&B run | [fa9r6n1c](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/fa9r6n1c) |
+| Decision | Keep the persistence/replay architecture and replace fixture observations with real sequence association. |
+
+## W&B dashboard reading guide
+
+| Panel | What it answers | Observation | Insight / decision |
+|---|---|---|---|
+| memory revision and update timelines | Does every observation advance state deterministically? | Eight revisions are visible, including an intentionally empty update. | Occlusion must not fabricate an observation. |
+| mean confidence and history-entry timelines | How does evidence accumulate or decay? | Seven observations produce a readable history progression. | Retain explicit time axes and confidence components. |
+| episodic-event timeline | Are changes recorded as queryable events? | Event count evolves with the fixture. | Events and current object state serve different query needs. |
+| object and event tables | Can a user audit individual records? | IDs, timestamps, states, and evidence are inspectable. | Tables are essential complements to aggregate curves. |
+| persistence-record counts | Do snapshots and events survive storage? | Reload and replay produce equal serialized snapshots. | Promote persistence contract; do not infer tracking quality. |
+
+## Stage insights and decisions
+
+| Stage | Evidence | Insight | Decision |
+|---|---|---|---|
+| Incremental update | Revision/history timelines | State changes are visible at each step. | Keep step-indexed logging for real episodes. |
+| Occlusion | One empty update | Absence of evidence is represented without hallucination. | Add confidence decay/last-seen policies under longer gaps. |
+| Persistence | Reload/replay equality | Snapshot and event-sourced paths agree on this fixture. | Expand corruption and migration tests. |
+| LOD/query | Compressed history and mug query | Queryability survives the basic lifecycle. | Measure compression-versus-task accuracy on real episodes. |
+
 ## Objective
 
 Validate that sequential object evidence becomes bounded local context, durable global history, episodic events,

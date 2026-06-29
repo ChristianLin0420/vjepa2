@@ -1,5 +1,33 @@
 # Phase 2 geometry experiment — 2026-06-29
 
+## Experiment metadata
+
+| Field | Value |
+|---|---|
+| Experiment ID | `2026-06-29-geometry-vggt-three-view-v1` |
+| Stage / status | `geometry / complete` |
+| Evidence level | `integration` |
+| Promoted W&B run | [l6nfxczi](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/l6nfxczi) |
+| Decision | Use VGGT as an optional geometry teacher/belief source while calibration benchmarks remain pending. |
+
+## W&B dashboard reading guide
+
+| Panel | What it answers | Observation | Insight / decision |
+|---|---|---|---|
+| `geometry/depth_map`, `geometry/depth_histogram` | Is the predicted depth spatially structured and numerically plausible? | Multi-view depth and its distribution are visible. | Inspect both; a plausible image can hide an implausible numeric range. |
+| `geometry/depth_uncertainty`, depth log-variance | Where does the adapter express uncertainty? | Uncertainty artifacts are persisted with the mean. | Treat uncertainty as uncalibrated until held-out NLL/ECE evaluation. |
+| scale/pose/reconstruction confidence | Does confidence respond to input mode and available views? | Three-view confidence is reported separately by type. | Never collapse these into one generic confidence score. |
+| `geometry/point_extent_xyz` | Does the point map occupy a plausible coordinate extent? | Axis extents are logged. | Use as an export/sanity diagnostic, not reconstruction accuracy. |
+| track count and runtime | What geometry products exist, and at what cost? | Tracks and end-to-end geometry time are explicit. | Later full-pipeline evidence identifies VGGT as the main latency target. |
+
+## Stage insights and decisions
+
+| Stage | Evidence | Insight | Decision |
+|---|---|---|---|
+| Single-image geometry | Low scale confidence without a prior | A monocular output is a belief, not a metric map. | Keep scale uncertainty explicit. |
+| Multi-view geometry | Camera/depth/point-map/track exports | The adapter contract supports downstream 3D attachment. | Integrate with object slots and memory. |
+| Calibration | No ground-truth split in this run | Confidence is introspection, not measured correctness. | Add dataset-level pose/depth/calibration evaluation before accuracy claims. |
+
 ## Objective
 
 Validate the complete geometry-belief path with deterministic mock data and the official VGGT-1B checkpoint, while

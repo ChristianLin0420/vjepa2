@@ -21,6 +21,7 @@ from jepa4d.benchmarks.tracking4d.smoke import IdentityAssociationSmokeBenchmark
 from jepa4d.models.geometry_belief import GeometryBeliefHead
 from jepa4d.models.object_slot_grounder import ObjectSlotGrounder
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
+from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, StageRecord
 
 
 def main() -> None:
@@ -95,11 +96,26 @@ def main() -> None:
         "<style>body{font-family:system-ui;max-width:1000px;margin:2rem auto}pre{background:#f6f8fa;padding:1rem}</style>"
         f"</head><body><h1>Stagewise smoke benchmark</h1><pre>{html.escape(json.dumps(report, indent=2))}</pre></body></html>"
     )
-    markdown_path.write_text(
-        f"# Stagewise smoke benchmark\n\n- Timestamp: {report['timestamp']}\n- Config: `{args.config}`\n"
-        f"- Stages: `{requested}`\n- Result: all requested mock adapters completed\n\n"
-        "This experiment validates interfaces and finite outputs; it is not a model-quality benchmark.\n"
-    )
+    ExperimentRecord(
+        title="Stagewise smoke benchmark",
+        experiment_id="stagewise-smoke",
+        stage=" + ".join(requested),
+        status="complete",
+        evidence_level="contract-only",
+        objective="Validate every requested benchmark adapter and report interface with deterministic mock outputs.",
+        hypothesis="All requested adapters complete with finite, serializable metrics.",
+        decision="Use this result only as infrastructure evidence.",
+        timestamp=report["timestamp"],
+        config={"config_path": str(args.config), "resolved": config, "mock": True},
+        stages=[StageRecord(stage, "smoke adapter", "pass", "tiny fixture", "finite metrics") for stage in requested],
+        metrics={item["benchmark"]["name"]: item["metrics"] for item in results},
+        artifacts=[
+            ArtifactRecord(json_path, "JSON", "Machine-readable benchmark report"),
+            ArtifactRecord(html_path, "HTML", "Human-readable report"),
+        ],
+        limitations=["Mock adapters do not provide model-quality benchmark evidence."],
+        next_actions=["Replace one adapter per stage with a versioned real-data mini split."],
+    ).write(markdown_path)
     print(
         json.dumps(
             {"json": str(json_path), "html": str(html_path), "experiment": str(markdown_path), "results": results},

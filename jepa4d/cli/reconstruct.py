@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -12,6 +11,7 @@ import typer
 from jepa4d.data.rgb_input import load_rgb_input
 from jepa4d.models.geometry_belief import GeometryBeliefHead
 from jepa4d.models.geometry_export import export_geometry_npz, export_pointcloud_ply
+from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, PanelRecord, StageRecord
 from jepa4d.visualization.geometry_report import build_geometry_report
 from jepa4d.visualization.observability import ExperimentLogger
 
@@ -67,22 +67,63 @@ def main(
     metadata_path.write_text(json.dumps(belief.to_serializable(), indent=2) + "\n")
     logger.log_geometry_belief(batch, belief)
     report_path = build_geometry_report(batch, belief, output / "report.html", wandb_url=logger.url)
-    experiment_path = output / "EXPERIMENT.md"
-    experiment_path.write_text(
-        f"# Geometry experiment: {name}\n\n"
-        f"- Timestamp: {datetime.now(UTC).isoformat()}\n"
-        f"- Backend: `{backend}`\n- Input mode: `{batch.mode}`\n"
-        f"- Views/timesteps: `{batch.images.shape[1]}/{batch.images.shape[2]}`\n"
-        f"- Scale confidence: `{belief.scale_confidence.tolist()}`\n"
-        f"- Pose confidence: `{belief.pose_confidence.tolist()}`\n"
-        f"- Reconstruction confidence: `{belief.reconstruction_confidence.tolist()}`\n"
-        f"- Runtime: `{belief.metadata['runtime_seconds']:.6f} s`\n"
-        f"- W&B: {logger.url or 'disabled'}\n\n"
-        "## Interpretation\n\n"
-        "Confidence values describe the adapter's belief and are not accuracy claims until calibrated on held-out geometry. "
-        "Uncalibrated single-image scale is deliberately low.\n\n"
-        f"## Artifacts\n\n- `{npz_path}`\n- `{ply_path}`\n- `{metadata_path}`\n- `{report_path}`\n"
-    )
+    experiment_path = ExperimentRecord(
+        title=f"Geometry belief: {name}",
+        experiment_id=name,
+        stage="geometry",
+        status="complete",
+        evidence_level="contract-only" if backend == "mock" else "integration",
+        objective="Produce explicit camera, depth, point-map, track, and uncertainty beliefs from RGB.",
+        hypothesis="Additional views improve geometric constraint while unknown monocular scale remains uncertain.",
+        decision="Expose the belief downstream without treating adapter confidence as calibrated accuracy.",
+        wandb_url=logger.url,
+        config={
+            "backend": backend,
+            "model_id": model_id,
+            "device": device,
+            "mode": batch.mode,
+            "views": batch.images.shape[1],
+            "timesteps": batch.images.shape[2],
+            "output_size": output_size,
+        },
+        stages=[
+            StageRecord(
+                "geometry",
+                backend,
+                "pass",
+                batch.mode,
+                "camera/depth/point-map/tracks",
+                "Outputs are beliefs; metric accuracy remains unmeasured in this run.",
+            )
+        ],
+        panels=[
+            PanelRecord("geometry/depth_map", "image", "Inspect spatial depth structure."),
+            PanelRecord("geometry/depth_histogram", "histogram", "Inspect numerical depth support."),
+            PanelRecord("geometry/depth_uncertainty", "image", "Locate uncertain regions."),
+            PanelRecord("geometry/point_extent_xyz", "chart", "Sanity-check point-map coordinate extent."),
+            PanelRecord("geometry/*_confidence", "scalar", "Separate scale, pose, and reconstruction belief."),
+        ],
+        metrics={
+            "scale_confidence": belief.scale_confidence.tolist(),
+            "pose_confidence": belief.pose_confidence.tolist(),
+            "reconstruction_confidence": belief.reconstruction_confidence.tolist(),
+            "runtime_s": belief.metadata["runtime_seconds"],
+        },
+        artifacts=[
+            ArtifactRecord(p, p.suffix.lstrip("."), purpose)
+            for p, purpose in (
+                (npz_path, "Serialized geometry belief"),
+                (ply_path, "Inspectable point cloud"),
+                (metadata_path, "JSON metadata"),
+                (report_path, "Interactive diagnostics"),
+            )
+        ],
+        limitations=[
+            "Adapter confidence is not calibrated error.",
+            "Single-image metric scale is ambiguous without a prior.",
+        ],
+        next_actions=["Evaluate depth, pose, tracks, and calibration on a versioned held-out dataset."],
+    ).write(output / "EXPERIMENT.md")
     logger.log_artifact(npz_path, "geometry-belief")
     logger.log_artifact(ply_path, "point-cloud")
     logger.log_artifact(report_path, "interactive-report")

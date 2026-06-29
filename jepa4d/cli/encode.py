@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -14,6 +13,7 @@ import typer
 from jepa4d.data.rgb_input import load_rgb_input
 from jepa4d.data.schemas import JEPATokenBundle
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
+from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, PanelRecord, StageRecord
 from jepa4d.visualization.html_report import build_feature_report
 from jepa4d.visualization.observability import ExperimentLogger
 
@@ -53,30 +53,52 @@ def _write_experiment_markdown(
     wandb_url: str | None,
     artifacts: list[Path],
 ) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        f"# Experiment: {name}",
-        "",
-        f"- Timestamp: {datetime.now(UTC).isoformat()}",
-        f"- Inputs: {', '.join(str(value) for value in inputs)}",
-        f"- Model: `{bundle.metadata['model']['model_name']}`",
-        f"- Backend: `{bundle.metadata['model']['backend']}`",
-        f"- Dense token shape: `{list(bundle.dense_tokens.shape)}`",
-        f"- Runtime: `{runtime['total_s']:.4f} s`",
-        f"- W&B: {wandb_url or 'disabled'}",
-        "",
-        "## Artifacts",
-        "",
-        *[f"- `{artifact}`" for artifact in artifacts],
-        "",
-        "## Result",
-        "",
-        f"All finite: `{bool(torch.isfinite(bundle.dense_tokens).all())}`",
-        f"Feature mean/std: `{bundle.dense_tokens.float().mean().item():.6f}` / `{bundle.dense_tokens.float().std().item():.6f}`",
-        "",
-    ]
-    path.write_text("\n".join(lines))
-    return path
+    model = bundle.metadata["model"]
+    return ExperimentRecord(
+        title=f"Feature extraction: {name}",
+        experiment_id=name,
+        stage="representation",
+        status="complete",
+        evidence_level="contract-only" if model["backend"] == "mock" else "integration",
+        objective="Extract inspectable dense, global, and intermediate V-JEPA tokens from a normalized RGB input.",
+        hypothesis="The selected backend produces finite, non-degenerate tokens with preserved view/time identity.",
+        decision="Use this run as representation substrate evidence; downstream task quality requires separate evaluation.",
+        wandb_url=wandb_url,
+        config={"inputs": [str(value) for value in inputs], "model": model, "runtime": runtime},
+        stages=[
+            StageRecord("input", "RGB loader", "pass", str([str(v) for v in inputs]), "normalized batch"),
+            StageRecord(
+                "features",
+                str(model["backend"]),
+                "pass",
+                "normalized RGB",
+                str(list(bundle.dense_tokens.shape)),
+                "Tokens are finite; task usefulness is not measured by this integration run.",
+            ),
+        ],
+        panels=[
+            PanelRecord("visualizations/input", "image", "Verify the exact input and preprocessing."),
+            PanelRecord("visualizations/pca_rgb", "image", "Inspect dense spatial feature structure."),
+            PanelRecord("features/value_histogram", "histogram", "Detect collapse and outliers."),
+            PanelRecord("features/norm_histogram", "histogram", "Inspect token magnitude distribution."),
+            PanelRecord("visualizations/temporal_consistency", "line", "Inspect adjacent-frame latent similarity."),
+            PanelRecord("features/layer_summary", "table", "Compare intermediate representation statistics."),
+            PanelRecord("inference/*", "scalar", "Measure latency and throughput."),
+        ],
+        metrics={
+            "dense_token_shape": list(bundle.dense_tokens.shape),
+            "all_finite": bool(torch.isfinite(bundle.dense_tokens).all()),
+            "feature_mean": bundle.dense_tokens.float().mean().item(),
+            "feature_std": bundle.dense_tokens.float().std().item(),
+            "runtime_s": runtime["total_s"],
+        },
+        artifacts=[
+            ArtifactRecord(value, value.suffix.lstrip(".") or "directory", "Reproducible run output")
+            for value in artifacts
+        ],
+        limitations=["PCA and temporal similarity are diagnostics, not semantic or tracking accuracy metrics."],
+        next_actions=["Evaluate the representation on a named downstream task or attach the next structured adapter."],
+    ).write(path)
 
 
 @app.command()

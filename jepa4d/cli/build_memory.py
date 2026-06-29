@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -16,6 +15,7 @@ from jepa4d.memory.persistence import MemoryPersistence
 from jepa4d.models.geometry_belief import GeometryBeliefHead
 from jepa4d.models.object_slot_grounder import ObjectSlotGrounder
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
+from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, PanelRecord, StageRecord
 from jepa4d.visualization.object_report import build_object_report
 from jepa4d.visualization.observability import ExperimentLogger
 
@@ -130,26 +130,70 @@ def main(
         "persistence_report": persistence_seconds,
     }
     logger.log_pipeline_summary(timings, step=3)
-    experiment_path = output / "EXPERIMENT.md"
-    experiment_path.write_text(
-        f"# Object grounding experiment: {name}\n\n"
-        f"- Timestamp: {datetime.now(UTC).isoformat()}\n"
-        f"- Input mode: `{batch.mode}`\n- Queries: `{result.queries}`\n"
-        f"- Detector/mask backend: `{detector_backend}/{mask_backend}`\n"
-        f"- Observations/slots: `{len(result.observations)}/{len(result.slots)}`\n"
-        f"- Geometry-attached slots: `{sum(slot.pose_map is not None for slot in result.slots)}`\n"
-        f"- Memory revision: `{memory_update.revision}`\n"
-        f"- Memory update: `{memory_update.to_serializable()}`\n"
-        f"- Grounding runtime: `{result.metadata['runtime_seconds']:.6f} s`\n"
-        f"- End-to-end runtime: `{sum(timings.values()):.6f} s`\n"
-        f"- Stage timings: `{timings}`\n"
-        f"- W&B: {logger.url or 'disabled'}\n\n"
-        "## Interpretation\n\n"
-        "Slots are associated observations, not verified physical truth. Mock detections validate contracts only; teacher "
-        "outputs require benchmark calibration and multi-view verification.\n\n"
-        f"## Artifacts\n\n- `{result_path}`\n- `{masks_path}`\n- `{output / 'memory.db'}`\n"
-        f"- `{scene_path}`\n- `{report_path}`\n"
-    )
+    attached = sum(slot.pose_map is not None for slot in result.slots)
+    evidence = "contract-only" if detector_backend == "mock" else "integration"
+    experiment_path = ExperimentRecord(
+        title=f"Object grounding and initial memory: {name}",
+        experiment_id=name,
+        stage="grounding + memory bootstrap",
+        status="complete",
+        evidence_level=evidence,
+        objective="Convert grounded RGB observations into explicit slots, geometry attachments, and queryable memory.",
+        hypothesis="Stagewise telemetry exposes representation, geometry, grounding, and persistence failures separately.",
+        decision="Use slots as uncertain observations; require temporal or benchmark evidence before identity claims.",
+        wandb_url=logger.url,
+        config={
+            "input_mode": batch.mode,
+            "queries": result.queries,
+            "detector_backend": detector_backend,
+            "mask_backend": mask_backend,
+            "geometry_backend": geometry_backend,
+            "timings_s": timings,
+        },
+        stages=[
+            StageRecord("features", "V-JEPA", "pass", "RGB", "tokens", "Representation diagnostics are retained."),
+            StageRecord(
+                "geometry", geometry_backend, "pass", "RGB", "geometry belief", "Belief is not calibrated truth."
+            ),
+            StageRecord(
+                "grounding",
+                detector_backend,
+                "pass",
+                str(result.queries),
+                f"{len(result.slots)} slots",
+                "Slots require downstream verification.",
+            ),
+            StageRecord("memory", "SQLite scene graph", "pass", "slots", f"revision {memory_update.revision}"),
+        ],
+        panels=[
+            PanelRecord("features/*", "mixed", "Validate the upstream latent substrate."),
+            PanelRecord("geometry/*", "mixed", "Inspect geometry and uncertainty attached to slots."),
+            PanelRecord("objects/mask_and_box", "image", "Audit localization quality."),
+            PanelRecord("objects/*_table", "table", "Audit observations, queries, and slots."),
+            PanelRecord("pipeline/stage_latency_s", "chart", "Locate the dominant latency stage."),
+            PanelRecord("pipeline/cumulative_latency_s", "line", "Read end-to-end latency accumulation."),
+        ],
+        metrics={
+            "observations": len(result.observations),
+            "slots": len(result.slots),
+            "geometry_attached_slots": attached,
+            "memory_revision": memory_update.revision,
+            "grounding_runtime_s": result.metadata["runtime_seconds"],
+            "end_to_end_runtime_s": sum(timings.values()),
+        },
+        artifacts=[
+            ArtifactRecord(result_path, "JSON", "Object observations and slots"),
+            ArtifactRecord(masks_path, "NPZ", "Mask arrays"),
+            ArtifactRecord(output / "memory.db", "SQLite", "Queryable memory"),
+            ArtifactRecord(scene_path, "JSON", "Scene graph snapshot"),
+            ArtifactRecord(report_path, "HTML", "Interactive diagnostics"),
+        ],
+        limitations=[
+            "Teacher detections are not verified physical truth.",
+            "A bootstrap run does not establish stable identity.",
+        ],
+        next_actions=["Run sequence-level association and held-out grounding/geometry evaluation."],
+    ).write(output / "EXPERIMENT.md")
     for path, artifact_type in (
         (result_path, "object-slots"),
         (masks_path, "object-masks"),

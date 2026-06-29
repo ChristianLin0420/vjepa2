@@ -1,9 +1,16 @@
-# JEPA-4D experiment ledger policy
+# JEPA-4D experiment ledger
 
 ## Purpose
 
 W&B dashboards are useful for comparison but mutable and account-dependent. Every experiment therefore writes a local
 Markdown record and machine-readable artifacts. Promoted conclusions are copied into this tracked directory after review.
+
+- [INDEX.md](INDEX.md) is the stage-by-stage evidence map and decision log.
+- [TEMPLATE.md](TEMPLATE.md) is the stable schema for promoted and generated records.
+- Dated files are immutable narratives for individual promoted experiments; amendments must be labeled.
+
+The organization is intentionally append-only: new stages, datasets, seeds, or ablations add rows and records without
+rewriting the meaning of older evidence.
 
 ## Run naming
 
@@ -72,9 +79,20 @@ evidence. Failed runs remain documented when they reveal a real defect.
 
 ## W&B conventions
 
-Projects use `jepa4d-worldmodel`; tags include phase, stage, backend, model, and input mode. Scalar namespaces are
-`features/`, `geometry/`, `inference/`, and `training/`. Media and artifacts are supplemental; local outputs remain the
-reproducible source. Credentials come only from environment variables.
+Projects use `jepa4d-worldmodel`; tags include phase, stage, backend, model, input mode, dataset/split, evidence level,
+and seed where applicable. Stable namespaces are `features/`, `geometry/`, `objects/`, `memory/`, `identity/`,
+`dynamics/`, `planning/`, `training/`, `system/`, and `pipeline/`. Each promoted record includes a dashboard reading
+guide that maps panels to questions, observations, insights, and decisions. Media and artifacts are supplemental; local
+outputs remain the reproducible source. Credentials come only from environment variables.
+
+## Required narrative structure
+
+Every record uses the canonical order in [TEMPLATE.md](TEMPLATE.md): metadata; question and decision; stage results and
+insights; reproduction configuration; W&B guide; numerical results; artifacts; failures; claim boundary; next
+experiments. Stage-specific content belongs in optional appendices, keeping automated indexing possible.
+
+Use one evidence label from [INDEX.md](INDEX.md). In particular, mocks are `contract-only`, unscored real-model demos are
+`integration`, and a single named sequence is `sequence-level`; none should be presented as benchmark evidence.
 
 ## Failure records
 
@@ -83,12 +101,8 @@ whether a replacement run supersedes them. Deleting failed evidence without expl
 
 ## Current promoted runs
 
-- Phase 1 multi-layer V-JEPA 2.1 video: `gisjdqvx`.
-- Phase 2 official VGGT three-view geometry: `l6nfxczi`.
-- Phase 3 real GroundingDINO CPU grounding: `4b1xse80`.
-- Phase 3 full real V-JEPA + VGGT + GroundingDINO observability run: `wvljbqlv`.
-- Phase 4 incremental persistence/replay demo: `fa9r6n1c`.
-- Real V-JEPA identity ablation on DAVIS `dogs-scale`: `fw4rj25e`.
+The authoritative, extensible list is [INDEX.md](INDEX.md). The earlier Phase 3 run `4b1xse80` remains useful component
+evidence, while `wvljbqlv` is the promoted full-pipeline observability run.
 
 The failed Phase 3 logging run `bojfn58h` is superseded by `4b1xse80`; its failure and remediation are recorded in
 `2026-06-29-phase3-object-grounding.md`.

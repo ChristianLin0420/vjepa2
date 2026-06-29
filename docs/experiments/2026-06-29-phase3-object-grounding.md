@@ -1,5 +1,36 @@
 # Phase 3 initial object-grounding experiment
 
+## Experiment metadata
+
+| Field | Value |
+|---|---|
+| Experiment ID | `2026-06-29-grounding-full-real-pipeline-v2` |
+| Stage / status | `grounding + pipeline / complete` |
+| Evidence level | `integration` |
+| Promoted W&B run | [wvljbqlv](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/wvljbqlv) |
+| Supersedes | `bojfn58h` for logging completeness; `4b1xse80` remains component evidence. |
+| Decision | Keep the integrated pipeline and prioritize geometry latency plus sequence-level identity evaluation. |
+
+## W&B dashboard reading guide
+
+| Panel | What it answers | Observation | Insight / decision |
+|---|---|---|---|
+| `features/*` | Did the real JEPA substrate remain healthy inside the full pipeline? | Feature moments, distributions, and media are logged before downstream stages. | Full runs must not hide upstream regressions. |
+| `geometry/*` | What geometry and uncertainty were attached to detections? | Depth, uncertainty, confidence, extents, and track diagnostics are present. | Slot 3D attachment inherits geometry uncertainty. |
+| `objects/mask_and_box`, slot/query/observation tables | What was detected, localized, and converted into slots? | Per-object qualitative and tabular evidence is inspectable. | A detector output is an observation, not verified object truth. |
+| `pipeline/stage_latency_s`, cumulative latency | Where is end-to-end time spent? | VGGT used 26.659 s of the 38.707 s run; V-JEPA used 3.630 s. | Geometry is the first performance optimization target. |
+| artifact inventory | Can the exact result be reviewed outside the dashboard? | JSON, NPZ, SQLite, scene graph, HTML, and model/run artifacts were uploaded. | Keep local artifacts authoritative and W&B as the comparison surface. |
+
+## Stage insights and decisions
+
+| Stage | Evidence | Insight | Decision |
+|---|---|---|---|
+| V-JEPA | Real feature telemetry | Representation extraction is not the pipeline bottleneck. | Preserve feature diagnostics; avoid premature encoder optimization. |
+| VGGT | 26.659 s stage latency | Geometry dominates this CPU/full-real configuration. | Profile device placement, resolution, and caching. |
+| GroundingDINO | Load and inference measured separately | Model initialization materially affects one-shot runtime. | Report warm and cold latency independently in benchmarks. |
+| Persistence | 0.492 s and queryable artifacts | Structured output overhead is small relative to learned adapters. | Continue into incremental memory. |
+| Identity | No temporal benchmark in this run | Stable physical identity is not proven by one view set. | Evaluate appearance/IoU/mask association separately. |
+
 ## Question
 
 Can the new object-slot boundary run end to end with both deterministic CPU mocks and a real open-vocabulary teacher,

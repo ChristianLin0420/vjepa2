@@ -15,6 +15,7 @@ from jepa4d.benchmarks.tracking4d.identity import (
     run_identity_variant,
 )
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
+from jepa4d.visualization.experiment_record import ArtifactRecord, ExperimentRecord, PanelRecord, StageRecord
 from jepa4d.visualization.identity_report import build_identity_report
 from jepa4d.visualization.observability import ExperimentLogger
 
@@ -159,17 +160,49 @@ def main() -> None:
     metrics_path.write_text(json.dumps({"results": results, "sweeps": sweeps, "metadata": metadata}, indent=2) + "\n")
     logger.log_identity_ablation(results, sweeps)  # type: ignore[arg-type]
     report_path = build_identity_report(results, args.output / "report.html", metadata=metadata, wandb_url=logger.url)
-    experiment_path = args.output / "EXPERIMENT.md"
-    experiment_path.write_text(
-        "# Identity association ablation\n\n"
-        f"- Timestamp: {metadata['timestamp']}\n"
-        f"- V-JEPA backend: `{extractor.model_config['backend']}`\n"
-        f"- DAVIS sequence: `{args.davis_sequence if args.davis_root else 'not run'}`\n"
-        f"- Timings: `{timings}`\n"
-        f"- W&B: {logger.url or 'disabled'}\n\n"
-        "Synthetic results are controlled diagnostics. DAVIS default operating points are real-video sequence results. "
-        "The reported exploratory best uses the same sequence for selection and evaluation and is not held-out evidence.\n"
-    )
+    davis_sequence = args.davis_sequence if args.davis_root else "not run"
+    evidence = "sequence-level" if args.davis_root else "contract-only"
+    experiment_path = ExperimentRecord(
+        title="Identity association ablation",
+        experiment_id=f"identity-{davis_sequence}",
+        stage="identity",
+        status="complete",
+        evidence_level=evidence,
+        objective="Compare spatial, RGB, V-JEPA box, mask, and fused cues for persistent association.",
+        hypothesis="V-JEPA appearance improves on RGB appearance but works best with spatial continuity.",
+        decision="Select weights on held-out sequences before changing the default tracker.",
+        wandb_url=logger.url,
+        config={"model": extractor.model_config, "davis_sequence": davis_sequence, "timings_s": timings},
+        stages=[
+            StageRecord("controlled", "crossing fixture", "pass", "synthetic tracks", "cue ablations"),
+            StageRecord(
+                "real sequence",
+                "DAVIS",
+                "pass" if args.davis_root else "skipped",
+                davis_sequence,
+                "association metrics",
+            ),
+        ],
+        panels=[
+            PanelRecord("identity/results", "table", "Read exact metrics for every dataset and variant."),
+            PanelRecord("identity/f1_comparison", "bar", "Compare default association F1."),
+            PanelRecord("identity/switch_comparison", "bar", "Compare identity-switch behavior."),
+            PanelRecord("identity/operating_point_sweep", "table", "Audit all appearance weights and thresholds."),
+            PanelRecord("identity/sweep_f1", "scatter", "Inspect sensitivity and stable operating regions."),
+        ],
+        metrics={"results": results},
+        artifacts=[
+            ArtifactRecord(metrics_path, "JSON", "Exact results and sweeps"),
+            ArtifactRecord(report_path, "HTML", "Interactive comparisons"),
+        ],
+        limitations=[
+            "Synthetic results are controlled diagnostics.",
+            "The exploratory best selects and evaluates on the same sequence and is not held-out evidence.",
+        ],
+        next_actions=[
+            "Tune on separate sequences and report held-out DAVIS aggregate metrics with confidence intervals."
+        ],
+    ).write(args.output / "EXPERIMENT.md")
     for path, artifact_type in (
         (metrics_path, "identity-metrics"),
         (report_path, "interactive-report"),
