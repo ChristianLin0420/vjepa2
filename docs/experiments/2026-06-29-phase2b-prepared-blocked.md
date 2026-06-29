@@ -1,16 +1,16 @@
-# Phase 2b geometry distillation — prepared, GPU execution blocked
+# Phase 2b geometry distillation — prepared for Slurm execution
 
 ## Experiment metadata
 
 | Field | Value |
 |---|---|
 | Experiment ID | `phase2b-jepa-geometry-distillation-v1` |
-| Stage / status | `geometry student / implementation ready, execution blocked` |
+| Stage / status | `geometry student / implementation ready, Slurm validation pending` |
 | Evidence level | `implementation-only` |
-| Dataset manifest | `tum-rgbd-fr1-xyz-phase2b` version `1.0.0` |
+| Dataset manifest | `tum-rgbd-fr1-xyz-phase2b` version `1.0.1` |
 | Intended hardware | NVIDIA A100 80 GB PCIe |
-| W&B | Not initialized; no run or partial metrics exist. |
-| Decision | Preserve the protocol and resume only after stable CUDA recovery. |
+| W&B | Formal run not initialized; online preflight is the next gate. |
+| Decision | Submit static/unit/CUDA tests, then real-model preflight, then the unchanged formal protocol. |
 
 ## Objective
 
@@ -47,7 +47,34 @@ The primary promotion metric is metric AbsRel on the chronological test split. S
 uncertainty NLL before/after validation-only calibration, latency, memory, parameters, per-seed variation, and failures.
 No test metric participates in checkpoint selection.
 
-## GPU blocker
+## Pre-execution protocol correction for Slurm
+
+The first code review on the Slurm host found issues that would have made the original prepared comparison misleading.
+They were corrected before any Phase-2b optimization result existed, so this is a pre-registered protocol amendment rather
+than a post-result change:
+
+- every encoder now receives independent `B=N,V=1,T=1` samples; batching no longer turns eight frames into one
+  multi-view VGGT scene;
+- RGB and depth use the same center-square crop; RGB is resized bilinearly and depth with nearest-neighbor interpolation;
+- VGGT is evaluated directly at 518 px, while a separate 24 px tensor is used only for probe supervision;
+- one VGGT metric scale is fitted on training pixels and frozen before validation/test; per-test-frame scale alignment is
+  reported only under `aligned_*`;
+- invalid/non-positive predictions on valid target pixels fail the run instead of disappearing from metric denominators;
+- layers 2, 5, 8, and 11 are standardized from training statistics and averaged, keeping the multi-layer and final-layer
+  probes exactly parameter-matched;
+- the RGB baseline is train-normalized and explicitly described as a non-JEPA representation with the same VGGT-assisted
+  supervision, not as a teacher-free baseline;
+- V-JEPA and VGGT are unloaded between profiles; encoder throughput, batch-1 head latency, inference memory, and training
+  memory are labeled separately;
+- all nine learned runs must finish at 60 epochs with seeds 0/1/2, online W&B, checkpoint/normalization hashes, finite
+  metrics, per-frame diagnostics, and a passing strict postflight validator.
+- the first real archive audit found RGB index 202 had no ground-truth pose within the fixed 30 ms association tolerance;
+  before model execution it was replaced by the nearest unused valid index 203 and the manifest was bumped to 1.0.1.
+
+The formal Slurm allocation is one task and one GPU with 16 CPUs, 220 GiB RAM, and a four-hour limit. A real-model
+preflight must first pass on an equal-or-smaller-memory GPU and upload its checkpoint/report artifact to online W&B.
+
+## Historical single-host GPU blocker
 
 Immediately before the first training launch, the A100 had passed earlier Phase-2 quality runs. At Phase-2b launch time:
 
@@ -56,38 +83,37 @@ Immediately before the first training launch, the A100 had passed earlier Phase-
 - PyTorch reported `cuda_available=false` and zero devices;
 - the runner rejected execution before model loading or W&B initialization.
 
-This is the previously diagnosed PCIe link-loss condition, not a model, token, dependency, or training failure. No CPU
-fallback was allowed because it would invalidate the required GPU runtime/memory comparison. No result was promoted.
+This was the previously diagnosed PCIe link-loss condition, not a model, token, dependency, or training failure. No CPU
+fallback was allowed because it would invalidate the required GPU runtime/memory comparison. The relaunch now uses the
+approved Slurm partitions, with CUDA health rechecked inside every allocation. No result has yet been promoted.
 
 ## Verification before commit
 
-- Ruff: pass;
-- mypy: pass across 80 source files;
-- JEPA-4D pytest: 57 passed, one third-party deprecation warning;
+- Ruff: pass across `jepa4d`, `scripts`, and `slurm`;
+- mypy: pass across 89 Phase-2b-relevant source files;
+- JEPA-4D pytest: 72 passed, one expected local-model skip, one third-party deprecation warning;
+- Slurm `--test-only`: test, preflight, and formal entrypoints accepted by the scheduler;
 - credential scan: supplied W&B and Hugging Face tokens absent from tracked files;
-- comparison runner exits before side effects when CUDA is unavailable.
+- login environment: Python 3.12 dependency check passes;
+- assets: V-JEPA, pinned compatibility source, VGGT-1B, and TUM archive/extraction identities verified;
+- comparison runner and formal wrappers fail closed without CUDA, passing receipts, or online W&B.
 
 ## Resume command
 
-After the host restores the device and `python scripts/check_cuda.py` passes under sustained load:
+From the repository root after login preparation:
 
 ```bash
-python scripts/run_phase2b_geometry_distillation.py \
-  --dataset-root /path/to/rgbd_dataset_freiburg1_xyz \
-  --archive /path/to/rgbd_dataset_freiburg1_xyz.tgz \
-  --manifest jepa4d/config/benchmarks/manifests/tum_rgbd_phase2b_v1.yaml \
-  --output outputs/jepa4d_phase2b/tum_rgbd_v1 \
-  --device cuda:0 --epochs 60 --wandb \
-  --wandb-project jepa4d-worldmodel \
-  --run-name phase2b-jepa-geometry-distillation-v1
+test_job=$(sbatch --parsable slurm/phase2b_tests.sbatch)
+preflight_job=$(sbatch --parsable --dependency="afterok:${test_job}" slurm/phase2b_preflight.sbatch)
+train_job=$(sbatch --parsable --dependency="afterok:${preflight_job}" slurm/phase2b_train.sbatch)
 ```
 
 ## Remaining work
 
-1. Restore/reboot the host and require stable CUDA/NVML plus sustained allocation and compute.
-2. Execute all nine learned runs (three variants × three seeds) and the VGGT teacher on the pinned split.
-3. Verify zero missing seeds, finite predictions, checkpoint hashes, failure records, and local/W&B artifact parity.
-4. Download the finished W&B summary/config/metadata into the audit workspace.
+1. Pass the submitted static/unit/sustained-CUDA test receipt.
+2. Pass real V-JEPA/VGGT inference, optimizer/reload/report, and online-W&B preflight.
+3. Execute all nine learned runs (three variants × three seeds) and the VGGT teacher on the pinned split.
+4. Verify zero missing seeds, finite predictions, checkpoint hashes, failure records, and local/W&B artifact parity.
 5. Add numerical comparison tables and per-variant insights to this record, `INDEX.md`, and `INSIGHTS.md`.
 6. Mark Phase 2b complete only if the accuracy/runtime/memory gate is evaluated; record a negative outcome honestly.
 

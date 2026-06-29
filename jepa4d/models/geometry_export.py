@@ -60,8 +60,12 @@ def _rotation_matrix_to_qvec(rotation: np.ndarray) -> np.ndarray:
     if trace > 0:
         scale = 2.0 * np.sqrt(trace + 1.0)
         qvec = np.array(
-            [0.25 * scale, (matrix[2, 1] - matrix[1, 2]) / scale, (matrix[0, 2] - matrix[2, 0]) / scale,
-             (matrix[1, 0] - matrix[0, 1]) / scale]
+            [
+                0.25 * scale,
+                (matrix[2, 1] - matrix[1, 2]) / scale,
+                (matrix[0, 2] - matrix[2, 0]) / scale,
+                (matrix[1, 0] - matrix[0, 1]) / scale,
+            ]
         )
     else:
         axis = int(np.argmax(np.diag(matrix)))
@@ -112,5 +116,7 @@ def export_colmap_text(belief: GeometryBelief, batch: RGBInputBatch, directory: 
 
     (target / "cameras.txt").write_text("\n".join(camera_lines) + "\n")
     (target / "images.txt").write_text("\n".join(image_lines) + "\n")
-    (target / "points3D.txt").write_text("# Empty: dense geometry is stored in geometry_belief.npz and pointcloud.ply\n")
+    (target / "points3D.txt").write_text(
+        "# Empty: dense geometry is stored in geometry_belief.npz and pointcloud.ply\n"
+    )
     return target

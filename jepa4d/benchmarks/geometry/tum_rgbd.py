@@ -209,9 +209,13 @@ def calibration_metrics(
     test_values: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
     for index in calibration_indices + test_indices:
         aligned, truth, scale = _depth_values(predicted[index], target[index])
-        valid = torch.isfinite(predicted[index]) & torch.isfinite(target[index]) & (target[index] > 0.1) & (
-            target[index] < 10.0
-        ) & (predicted[index] > 0)
+        valid = (
+            torch.isfinite(predicted[index])
+            & torch.isfinite(target[index])
+            & (target[index] > 0.1)
+            & (target[index] < 10.0)
+            & (predicted[index] > 0)
+        )
         variance = logvar[index][valid].float().exp() * scale**2
         squared_error = (aligned - truth) ** 2
         if index in calibration_indices:

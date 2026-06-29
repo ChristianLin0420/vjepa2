@@ -28,6 +28,8 @@ third_party/*
 checkpoints/
 outputs/
 wandb/
+slurm-*.out
+slurm-*.err
 *.zarr/
 __pycache__/
 .pytest_cache/

@@ -43,14 +43,25 @@ def geometry_probe_loss(
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     target_log_depth = target_depth.clamp_min(1e-4).log()
     residual = predicted_log_depth - target_log_depth
-    valid = valid_mask & torch.isfinite(target_log_depth)
+    target_valid = valid_mask & torch.isfinite(target_log_depth)
+    if not torch.isfinite(predicted_log_depth[target_valid]).all():
+        raise ValueError("predicted log depth is non-finite on valid target pixels")
+    if not torch.isfinite(predicted_log_variance[target_valid]).all():
+        raise ValueError("predicted log variance is non-finite on valid target pixels")
+    valid = target_valid
+    if int(valid.sum()) == 0:
+        raise ValueError("geometry probe loss has no finite valid pixels")
     nll = 0.5 * (torch.exp(-predicted_log_variance) * residual.square() + predicted_log_variance)
     nll_loss = nll[valid].mean()
     centered = residual[valid] - residual[valid].mean()
     scale_invariant = centered.square().mean()
-    gradient_loss = _gradient_loss(predicted_log_depth, target_log_depth, valid_mask)
+    gradient_loss = _gradient_loss(predicted_log_depth, target_log_depth, valid)
     distillation = torch.zeros((), device=predicted_log_depth.device)
     if teacher_depth is not None:
+        if teacher_depth.shape != target_depth.shape:
+            raise ValueError(f"teacher depth shape {tuple(teacher_depth.shape)} != target {tuple(target_depth.shape)}")
+        if not torch.isfinite(teacher_depth[valid]).all() or not (teacher_depth[valid] > 0).all():
+            raise ValueError("teacher depth is non-finite or non-positive on valid pixels")
         teacher_log_depth = teacher_depth.clamp_min(1e-4).log()
         distillation = F.smooth_l1_loss(predicted_log_depth[valid], teacher_log_depth[valid])
     total = nll_loss + 0.25 * scale_invariant + 0.1 * gradient_loss + teacher_weight * distillation
@@ -72,7 +83,10 @@ def _gradient_loss(predicted: torch.Tensor, target: torch.Tensor, valid: torch.T
             valid_delta &= valid[..., 1:] & valid[..., :-1]
         else:
             valid_delta &= valid[..., 1:, :] & valid[..., :-1, :]
-        losses.append((predicted_delta - target_delta).abs()[valid_delta].mean())
+        if valid_delta.any():
+            losses.append((predicted_delta - target_delta).abs()[valid_delta].mean())
+    if not losses:
+        raise ValueError("geometry gradient loss has no valid neighboring pixels")
     return torch.stack(losses).mean()
 
 

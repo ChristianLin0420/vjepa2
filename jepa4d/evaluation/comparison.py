@@ -15,7 +15,10 @@ class VariantResult:
     metrics: dict[str, float]
     runtime: dict[str, float]
     parameters: int
+    trainable_parameters: int | None = None
+    encoder_parameters: int | None = None
     checkpoint: str | None = None
+    checkpoint_sha256: str | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -30,6 +33,8 @@ class ComparisonRecord:
     failures: list[dict[str, str]]
     aggregates: dict[str, dict[str, float]] = field(default_factory=dict)
     wandb_url: str | None = None
+    environment: dict[str, Any] = field(default_factory=dict)
+    artifacts: dict[str, str] = field(default_factory=dict)
 
     def to_serializable(self) -> dict[str, Any]:
         return asdict(self)

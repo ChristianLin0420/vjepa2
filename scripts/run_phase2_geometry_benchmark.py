@@ -124,9 +124,7 @@ def main(
     calibration_indices = [int(value) for value in selection["calibration_indices"]]
     test_indices = [int(value) for value in selection["test_indices"]]
     aggregate = _mean_metrics(per_sample, test_indices)
-    aggregate.update(
-        calibration_metrics(predictions, targets, logvars, calibration_indices, test_indices)
-    )
+    aggregate.update(calibration_metrics(predictions, targets, logvars, calibration_indices, test_indices))
     aggregate.update(pose_metrics(belief.camera_extrinsics[0, 0], samples))
     aggregate.update(
         {
