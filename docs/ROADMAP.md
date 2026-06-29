@@ -62,6 +62,11 @@ Remaining before declaring model-quality completion:
 - propagate geometry covariance/frame provenance into slot poses;
 - add explicit occlusion, split, merge, deletion, and re-identification events.
 
+Initial identity evidence: a real V-JEPA2.1 ablation on DAVIS `dogs-scale` shows appearance-only F1 0.609 versus RGB
+0.374, but IoU-only reaches 0.768 and current default/swept weighted fusion does not exceed it. This rejects treating raw
+box-pooled V-JEPA tokens as a sufficient identity embedding and prioritizes mask-weighted multi-layer projection plus
+motion-aware global assignment. See `DESIGN_IDENTITY_EVALUATION.md`.
+
 Gate: object and identity metrics pass on static, cross-view, video, and occlusion fixtures; teacher dependencies remain
 optional; no planner consumes raw masks or tensors.
 

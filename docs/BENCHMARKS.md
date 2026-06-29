@@ -1,5 +1,21 @@
 # JEPA-4D benchmark specification
 
+## Identity association benchmark
+
+The tracking layer now includes a deterministic two-instance crossing/occlusion fixture and a loader for labeled DAVIS
+2017 instance masks. Metrics include pairwise identity precision/recall/F1, switches, fragments, false merges, survival,
+and predicted track count. CPU CI runs the controlled fixture:
+
+```bash
+python scripts/run_eval_stagewise.py \
+  --config jepa4d/config/benchmarks/identity_smoke.yaml \
+  --mock --output outputs/identity_smoke
+```
+
+The real experiment uses `scripts/run_identity_ablation.py` with the official DAVIS `dogs-scale` sequence. Its boxes and
+masks are ground truth, so results isolate association and do not measure detector/segmenter quality. Full protocol,
+provenance, metrics, and claim boundaries are in `DESIGN_IDENTITY_EVALUATION.md`.
+
 ## Phase 4 memory smoke adapter
 
 `MemorySmokeBenchmark` applies five observations to one durable object, queries it, reloads the latest snapshot, and

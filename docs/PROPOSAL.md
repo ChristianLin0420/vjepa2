@@ -16,6 +16,11 @@ whether identity, relations, and uncertainty remain reliable under occlusion, re
 long-duration updates, and compression. Current deterministic persistence is infrastructure evidence, not proof of memory
 quality or task improvement.
 
+An initial real identity ablation further constrains the hypothesis: on DAVIS `dogs-scale`, V-JEPA appearance improves
+pairwise identity F1 over RGB statistics (0.609 versus 0.374), but IoU-only reaches 0.768 and current weighted fusion does
+not surpass it. The proposal therefore prioritizes learned mask-weighted instance projection and motion-aware assignment
+over assuming pretrained semantic tokens directly solve re-identification.
+
 ## Abstract
 
 JEPA-4D investigates whether pretrained V-JEPA 2.1 dense spatiotemporal features can form a shared substrate for RGB-first

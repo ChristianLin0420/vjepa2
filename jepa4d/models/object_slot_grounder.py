@@ -22,6 +22,34 @@ DetectorBackend = Literal["mock", "grounding_dino"]
 MaskBackend = Literal["box", "sam2"]
 
 
+@dataclass(frozen=True, slots=True)
+class AssociationConfig:
+    appearance_weight: float = 0.65
+    iou_weight: float = 0.20
+    geometry_weight: float = 0.15
+    threshold: float = 0.55
+    max_time_gap: int = 8
+    geometry_distance_scale_m: float = 1.0
+
+    def __post_init__(self) -> None:
+        weights = (self.appearance_weight, self.iou_weight, self.geometry_weight)
+        if any(value < 0 for value in weights) or sum(weights) <= 0:
+            raise ValueError("association weights must be non-negative with a positive sum")
+        if not 0 <= self.threshold <= 1:
+            raise ValueError("association threshold must be within [0,1]")
+        if self.max_time_gap < 0 or self.geometry_distance_scale_m <= 0:
+            raise ValueError("association gap and geometry scale must be positive")
+
+    @property
+    def normalized_weights(self) -> tuple[float, float, float]:
+        total = self.appearance_weight + self.iou_weight + self.geometry_weight
+        return (
+            self.appearance_weight / total,
+            self.iou_weight / total,
+            self.geometry_weight / total,
+        )
+
+
 @dataclass(slots=True)
 class ObjectObservation:
     """One object hypothesis tied to an original view and timestep."""
@@ -158,6 +186,11 @@ class ObjectSlotGrounder(nn.Module):
         box_threshold: float = 0.3,
         text_threshold: float = 0.25,
         association_threshold: float = 0.55,
+        appearance_weight: float = 0.65,
+        iou_weight: float = 0.20,
+        geometry_weight: float = 0.15,
+        max_time_gap: int = 8,
+        geometry_distance_scale_m: float = 1.0,
     ) -> None:
         super().__init__()
         if detector_backend not in {"mock", "grounding_dino"}:
@@ -171,7 +204,14 @@ class ObjectSlotGrounder(nn.Module):
         self.device_name = str(device)
         self.box_threshold = box_threshold
         self.text_threshold = text_threshold
-        self.association_threshold = association_threshold
+        self.association = AssociationConfig(
+            appearance_weight=appearance_weight,
+            iou_weight=iou_weight,
+            geometry_weight=geometry_weight,
+            threshold=association_threshold,
+            max_time_gap=max_time_gap,
+            geometry_distance_scale_m=geometry_distance_scale_m,
+        )
         self.detector: nn.Module | None = None
         self.processor: Any = None
         self.mask_predictor: Any = None
@@ -218,7 +258,7 @@ class ObjectSlotGrounder(nn.Module):
             if self.detector_backend == "mock"
             else self._detect_grounding_dino(batch, clean_queries, tokens, geometry)
         )
-        slots = self._associate(observations, batch)
+        slots = self.associate_observations(observations, batch)
         return ObjectGroundingResult(
             slots=slots,
             observations=observations,
@@ -237,6 +277,7 @@ class ObjectSlotGrounder(nn.Module):
                 "query_count": len(clean_queries),
                 "observation_count": len(observations),
                 "slot_count": len(slots),
+                "association": asdict(self.association),
                 "uses_jepa_tokens": tokens is not None,
                 "uses_geometry": geometry is not None,
                 "mock_outputs_are_not_accuracy_predictions": self.detector_backend == "mock",
@@ -268,7 +309,7 @@ class ObjectSlotGrounder(nn.Module):
                         min(float(height), (center_y + box_height / 2) * height),
                     ]
                     mask = self._box_mask(bbox, height, width)
-                    embedding = self._visual_embedding(image, bbox, query, tokens, view, time_index)
+                    embedding = self.extract_visual_embedding(image, bbox, query, tokens, view, time_index, mask=mask)
                     pose = self._geometry_centroid(mask, geometry, view, time_index)
                     observation_id = f"b0-v{view}-t{time_index}-q{query_index}"
                     observations.append(
@@ -295,7 +336,7 @@ class ObjectSlotGrounder(nn.Module):
         mask[max(0, int(y1)) : min(height, int(np.ceil(y2))), max(0, int(x1)) : min(width, int(np.ceil(x2)))] = True
         return mask
 
-    def _visual_embedding(
+    def extract_visual_embedding(
         self,
         image: torch.Tensor,
         bbox: list[float],
@@ -303,6 +344,7 @@ class ObjectSlotGrounder(nn.Module):
         tokens: JEPATokenBundle | None,
         view: int,
         time_index: int,
+        mask: np.ndarray | None = None,
     ) -> np.ndarray:
         if tokens is not None:
             token_time = min(
@@ -315,6 +357,11 @@ class ObjectSlotGrounder(nn.Module):
             y1 = max(0, min(grid_h - 1, int(bbox[1] / height * grid_h)))
             y2 = max(y1 + 1, min(grid_h, int(np.ceil(bbox[3] / height * grid_h))))
             grid = tokens.dense_tokens[0, view, token_time].reshape(grid_h, grid_w, -1)
+            if mask is not None:
+                mask_tensor = torch.from_numpy(mask).float()[None, None]
+                grid_mask = F.interpolate(mask_tensor, size=(grid_h, grid_w), mode="nearest")[0, 0].bool()
+                if grid_mask.any():
+                    return _normalize_embedding(grid[grid_mask].float().mean(dim=0).detach().cpu().numpy())
             return _normalize_embedding(grid[y1:y2, x1:x2].float().mean(dim=(0, 1)).detach().cpu().numpy())
         x1, y1, x2, y2 = [int(round(value)) for value in bbox]
         crop = image[:, max(0, y1) : max(y1 + 1, y2), max(0, x1) : max(x1 + 1, x2)].float()
@@ -369,7 +416,9 @@ class ObjectSlotGrounder(nn.Module):
                     zip(boxes, scores, labels, masks, strict=True)
                 ):
                     category = self._canonical_category(label, queries)
-                    embedding = self._visual_embedding(tensor, bbox, category, tokens, view, time_index)
+                    embedding = self.extract_visual_embedding(
+                        tensor, bbox, category, tokens, view, time_index, mask=mask
+                    )
                     pose = self._geometry_centroid(mask, geometry, view, time_index)
                     observations.append(
                         ObjectObservation(
@@ -405,29 +454,44 @@ class ObjectSlotGrounder(nn.Module):
             masks.append(np.asarray(predicted[int(np.argmax(scores))], dtype=bool))
         return masks
 
-    def _associate(self, observations: list[ObjectObservation], batch: RGBInputBatch) -> list[ObjectSlot]:
+    def associate_observations(self, observations: list[ObjectObservation], batch: RGBInputBatch) -> list[ObjectSlot]:
+        """Associate externally supplied observations with frame-wise exclusivity."""
         clusters: list[list[ObjectObservation]] = []
-        for observation in sorted(
-            observations, key=lambda value: (value.category, value.view_index, value.time_index)
-        ):
-            best_index, best_score = None, -1.0
-            for index, cluster in enumerate(clusters):
-                representative = cluster[-1]
-                if representative.category != observation.category:
+        grouped: dict[tuple[str, int, int], list[ObjectObservation]] = {}
+        for observation in observations:
+            grouped.setdefault((observation.category, observation.time_index, observation.view_index), []).append(
+                observation
+            )
+        for (category, time_index, view_index), frame_observations in sorted(grouped.items()):
+            candidates: list[tuple[float, int, int]] = []
+            for cluster_index, cluster in enumerate(clusters):
+                representative = max(cluster, key=lambda value: (value.time_index, value.view_index))
+                time_gap = time_index - representative.time_index
+                if representative.category != category or time_gap < 0 or time_gap > self.association.max_time_gap:
                     continue
-                appearance = float(representative.visual_embedding @ observation.visual_embedding)
-                overlap = _bbox_iou(representative.bbox_2d, observation.bbox_2d)
-                geometry_score = 0.0
-                if representative.pose_map is not None and observation.pose_map is not None:
-                    distance = np.linalg.norm(np.asarray(representative.pose_map) - np.asarray(observation.pose_map))
-                    geometry_score = float(np.exp(-distance))
-                score = 0.65 * appearance + 0.2 * overlap + 0.15 * geometry_score
-                if score > best_score:
-                    best_index, best_score = index, score
-            if best_index is not None and best_score >= self.association_threshold:
-                clusters[best_index].append(observation)
-            else:
-                clusters.append([observation])
+                if any(value.time_index == time_index and value.view_index == view_index for value in cluster):
+                    continue
+                for observation_index, observation in enumerate(frame_observations):
+                    candidates.append(
+                        (
+                            self._association_score(cluster, observation),
+                            cluster_index,
+                            observation_index,
+                        )
+                    )
+            used_clusters: set[int] = set()
+            used_observations: set[int] = set()
+            for score, cluster_index, observation_index in sorted(candidates, reverse=True):
+                if score < self.association.threshold:
+                    break
+                if cluster_index in used_clusters or observation_index in used_observations:
+                    continue
+                clusters[cluster_index].append(frame_observations[observation_index])
+                used_clusters.add(cluster_index)
+                used_observations.add(observation_index)
+            for observation_index, observation in enumerate(frame_observations):
+                if observation_index not in used_observations:
+                    clusters.append([observation])
         slots = []
         for cluster_index, cluster in enumerate(clusters):
             category = cluster[0].category
@@ -463,6 +527,19 @@ class ObjectSlotGrounder(nn.Module):
                 )
             )
         return slots
+
+    def _association_score(self, cluster: list[ObjectObservation], observation: ObjectObservation) -> float:
+        representative = max(cluster, key=lambda value: (value.time_index, value.view_index))
+        cluster_embedding = _normalize_embedding(np.mean([value.visual_embedding for value in cluster[-4:]], axis=0))
+        appearance = float(np.clip(cluster_embedding @ observation.visual_embedding, -1.0, 1.0))
+        appearance = (appearance + 1.0) / 2.0
+        overlap = _bbox_iou(representative.bbox_2d, observation.bbox_2d)
+        geometry_score = 0.0
+        if representative.pose_map is not None and observation.pose_map is not None:
+            distance = np.linalg.norm(np.asarray(representative.pose_map) - np.asarray(observation.pose_map))
+            geometry_score = float(np.exp(-distance / self.association.geometry_distance_scale_m))
+        appearance_weight, iou_weight, geometry_weight = self.association.normalized_weights
+        return appearance_weight * appearance + iou_weight * overlap + geometry_weight * geometry_score
 
     @staticmethod
     def _default_affordances(category: str) -> dict[str, float]:

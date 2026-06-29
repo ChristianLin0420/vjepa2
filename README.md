@@ -2,6 +2,7 @@
 > JEPA-4D extension status: Phases 0–3 and the initial Phase 4 persistent-memory substrate are implemented alongside the
 > original V-JEPA 2 code. See [architecture](docs/ARCHITECTURE.md), [Phase 3 design](docs/DESIGN_PHASE03_OBJECT_SLOTS.md),
 > [Phase 4 memory design](docs/DESIGN_PHASE04_MEMORY.md), [API](docs/API.md),
+> [identity evaluation](docs/DESIGN_IDENTITY_EVALUATION.md),
 > [GPU and observability](docs/GPU_AND_OBSERVABILITY.md), and the
 > [initial Phase 3 experiment](docs/experiments/2026-06-29-phase3-object-grounding.md).
 

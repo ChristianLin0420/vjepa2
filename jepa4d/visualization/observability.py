@@ -79,6 +79,8 @@ class ExperimentLogger:
             wandb.define_metric("training/*", step_metric="training/global_step")
             wandb.define_metric("memory/revision")
             wandb.define_metric("memory/*", step_metric="memory/revision")
+            wandb.define_metric("identity/variant_index")
+            wandb.define_metric("identity/*", step_metric="identity/variant_index")
 
     @property
     def url(self) -> str | None:
@@ -498,6 +500,92 @@ class ExperimentLogger:
                 "memory/snapshot": memory.snapshot().to_serializable(),
             }
         )
+
+    def log_identity_ablation(
+        self,
+        results: dict[str, dict[str, dict[str, float]]],
+        sweeps: list[dict[str, Any]] | None = None,
+    ) -> None:
+        if not self.enabled:
+            return
+        import wandb
+
+        table = wandb.Table(
+            columns=[
+                "dataset",
+                "variant",
+                "label",
+                "pairwise_f1",
+                "precision",
+                "recall",
+                "id_switches",
+                "false_merges",
+                "fragments",
+                "track_survival",
+                "predicted_tracks",
+            ]
+        )
+        index = 0
+        for dataset, variants in results.items():
+            for variant, metrics in variants.items():
+                table.add_data(
+                    dataset,
+                    variant,
+                    f"{dataset}/{variant}",
+                    metrics["pairwise_f1"],
+                    metrics["pairwise_precision"],
+                    metrics["pairwise_recall"],
+                    metrics["id_switches"],
+                    metrics["false_merges"],
+                    metrics["fragments"],
+                    metrics["track_survival"],
+                    metrics["predicted_tracks"],
+                )
+                self.run.log(
+                    {
+                        "identity/variant_index": index,
+                        "identity/dataset": dataset,
+                        "identity/variant": variant,
+                        "identity/pairwise_f1": metrics["pairwise_f1"],
+                        "identity/id_switches": metrics["id_switches"],
+                        "identity/false_merges": metrics["false_merges"],
+                        "identity/fragments": metrics["fragments"],
+                    }
+                )
+                index += 1
+        payload: dict[str, Any] = {
+            "identity/results": table,
+            "identity/f1_comparison": wandb.plot.bar(
+                table, "label", "pairwise_f1", title="Pairwise identity F1 by dataset and variant"
+            ),
+            "identity/switch_comparison": wandb.plot.bar(
+                table, "label", "id_switches", title="Identity switches by dataset and variant"
+            ),
+        }
+        if sweeps:
+            sweep_table = wandb.Table(
+                columns=["dataset", "appearance_weight", "iou_weight", "threshold", "f1", "switches", "merges"],
+                data=[
+                    [
+                        value["dataset"],
+                        value["appearance_weight"],
+                        value["iou_weight"],
+                        value["threshold"],
+                        value["pairwise_f1"],
+                        value["id_switches"],
+                        value["false_merges"],
+                    ]
+                    for value in sweeps
+                ],
+            )
+            payload["identity/operating_point_sweep"] = sweep_table
+            payload["identity/sweep_f1"] = wandb.plot.scatter(
+                sweep_table,
+                "threshold",
+                "f1",
+                title="Exploratory identity F1 across thresholds and appearance weights",
+            )
+        self.run.log(payload)
 
     def finish(self, summary: dict[str, Any] | None = None) -> None:
         if self.run is not None:

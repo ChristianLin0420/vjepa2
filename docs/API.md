@@ -28,6 +28,18 @@ records. `LODPolicy.compress(snapshot, task_context)` returns a bounded copy and
 Planner-facing access remains through `WorldModelQueryAPI`, including `find_object`, `get_local_context`,
 `get_observation_history`, `get_uncertainty`, `get_affordances`, route/region methods, verification, and task state.
 
+## Identity association configuration
+
+`ObjectSlotGrounder` accepts `appearance_weight`, `iou_weight`, `geometry_weight`, `association_threshold`,
+`max_time_gap`, and `geometry_distance_scale_m`. `associate_observations(observations, batch)` is public for benchmark and
+teacher-adapter use and enforces at most one observation per track in each view/time group. Weights are normalized and
+validated by `AssociationConfig`.
+
+`extract_visual_embedding(..., mask=None)` exposes the same JEPA/crop feature path used by the grounder so identity
+benchmarks do not duplicate feature logic. A supplied mask is nearest-neighbor projected onto the token grid; otherwise
+the box grid is pooled. These APIs return evidence clusters, not verified durable identity; Phase 4 stores their
+observation references and future split/merge operations must remain reversible.
+
 ## Phase 3 quick start
 
 ```python

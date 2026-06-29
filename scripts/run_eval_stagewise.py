@@ -17,6 +17,7 @@ from jepa4d.benchmarks.geometry.smoke import GeometrySmokeBenchmark
 from jepa4d.benchmarks.memory.smoke import MemorySmokeBenchmark
 from jepa4d.benchmarks.object_grounding.smoke import ObjectGroundingSmokeBenchmark
 from jepa4d.benchmarks.representation.smoke import RepresentationSmokeBenchmark
+from jepa4d.benchmarks.tracking4d.smoke import IdentityAssociationSmokeBenchmark
 from jepa4d.models.geometry_belief import GeometryBeliefHead
 from jepa4d.models.object_slot_grounder import ObjectSlotGrounder
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
@@ -65,6 +66,16 @@ def main() -> None:
         )
     if "memory" in requested:
         benchmark = MemorySmokeBenchmark()
+        predictions = benchmark.run(None, "tiny")
+        results.append(
+            {
+                "benchmark": benchmark.report(),
+                "predictions": predictions,
+                "metrics": benchmark.compute_metrics(predictions),
+            }
+        )
+    if "tracking4d" in requested:
+        benchmark = IdentityAssociationSmokeBenchmark()
         predictions = benchmark.run(None, "tiny")
         results.append(
             {

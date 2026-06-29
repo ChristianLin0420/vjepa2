@@ -31,6 +31,12 @@ Memory runs:
 memory-<mock|real>-<episode-or-dataset>-<updates>u[-purpose]
 ```
 
+Identity runs:
+
+```text
+identity-<mock|real-vjepa>-<fixture-or-dataset>-<sequence>[-ablation]
+```
+
 Training runs additionally include dataset, objective, and seed. Names should identify meaning, not implementation ticket
 numbers.
 
@@ -82,6 +88,7 @@ whether a replacement run supersedes them. Deleting failed evidence without expl
 - Phase 3 real GroundingDINO CPU grounding: `4b1xse80`.
 - Phase 3 full real V-JEPA + VGGT + GroundingDINO observability run: `wvljbqlv`.
 - Phase 4 incremental persistence/replay demo: `fa9r6n1c`.
+- Real V-JEPA identity ablation on DAVIS `dogs-scale`: `fw4rj25e`.
 
 The failed Phase 3 logging run `bojfn58h` is superseded by `4b1xse80`; its failure and remediation are recorded in
 `2026-06-29-phase3-object-grounding.md`.

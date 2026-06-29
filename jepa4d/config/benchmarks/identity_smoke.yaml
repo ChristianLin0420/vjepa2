@@ -1,0 +1,9 @@
+name: identity-association-smoke
+mock: true
+stages:
+  - tracking4d
+metrics:
+  - oracle_pairwise_f1
+  - no_appearance_pairwise_f1
+  - identity_evidence_gap
+  - same_frame_exclusivity

@@ -6,6 +6,8 @@ sam2_model_id: facebook/sam2-hiera-tiny
 box_threshold: 0.3
 text_threshold: 0.25
 association_threshold: 0.55
+max_time_gap: 8
+geometry_distance_scale_m: 1.0
 association_weights:
   appearance: 0.65
   bbox_iou: 0.20

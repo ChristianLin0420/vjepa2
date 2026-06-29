@@ -70,6 +70,11 @@ Phase 3 joins the branches only at an evidence adapter: boxes pool V-JEPA patch 
 This is not end-to-end training yet. Association preserves source view/time references so Phase 4 can replay, revise, or
 reject a slot without losing its observations. Full rationale and failure modes are in `DESIGN_PHASE03_OBJECT_SLOTS.md`.
 
+Association is frame-wise exclusive: one track cannot accept two detections from the same view/time group. Candidate
+scores combine configurable appearance, IoU, and optional metric geometry, with a maximum time gap. Current matching is
+greedy rather than globally optimal. Real DAVIS ablations show that V-JEPA appearance improves over RGB statistics but
+does not yet improve the strongest IoU operating point; see `DESIGN_IDENTITY_EVALUATION.md`.
+
 ## 3. Canonical input contract
 
 `RGBInputBatch.images` always uses `[B,V,T,3,H,W]`:
