@@ -12,6 +12,7 @@ from PIL import Image
 
 from jepa4d.models.geometry_student import DenseGeometryProbe, geometry_probe_loss
 from scripts import run_phase2b_geometry_distillation as phase2b
+from slurm.phase2b_preflight import _assert_close
 
 
 def _sample(root: Path, stem: str = "0000") -> SimpleNamespace:
@@ -127,3 +128,13 @@ def test_reported_preprocessing_policy_is_json_serializable(tmp_path: Path) -> N
     destination = tmp_path / "policy.json"
     phase2b._write_json(destination, {"crop": "center-square", "rgb": "bilinear", "depth": "nearest"})
     assert json.loads(destination.read_text())["depth"] == "nearest"
+
+
+def test_chunk_invariance_accepts_reduction_drift_but_rejects_content_changes() -> None:
+    separate = torch.linspace(-2, 2, 4096).reshape(2, 32, 64)
+    reduction_drift = separate + 0.002
+    statistics = _assert_close("test features", reduction_drift, separate, rtol=1e-2, atol=3e-3)
+    assert statistics["max_abs"] < 0.003
+    assert statistics["cosine_similarity"] > 0.999
+    with pytest.raises(RuntimeError, match="changes with chunk size"):
+        _assert_close("test features", separate.roll(1, dims=0), separate, rtol=1e-2, atol=3e-3)

@@ -74,6 +74,17 @@ than a post-result change:
 The formal Slurm allocation is one task and one GPU with 16 CPUs, 220 GiB RAM, and a four-hour limit. A real-model
 preflight must first pass on an equal-or-smaller-memory GPU and upload its checkpoint/report artifact to online W&B.
 
+## Slurm gate attempts
+
+- job `29586467` passed Ruff, mypy, 72 tests, environment/repository fingerprinting, and a sustained A100-SXM4-80GB
+  CUDA/GEMM check, producing the required test receipt;
+- the first real-model preflight, job `29586489`, failed before VGGT and before W&B initialization because its original
+  near-bitwise V-JEPA batch-equivalence tolerance rejected normal GPU reduction drift: only 1,612 of 3,538,944 layer-2
+  values exceeded the old bound and the worst absolute difference was 0.00212;
+- before any optimization or model-quality result, the gate was amended to use explicit numerical-equivalence tolerances
+  (`rtol=0.01`, `atol=0.003` for FP32 V-JEPA; PyTorch BF16-scale tolerances for VGGT) and to record maximum/mean error,
+  RMSE, relative RMSE, reference RMS, and cosine similarity. Large content/batching changes still fail the gate.
+
 ## Historical single-host GPU blocker
 
 Immediately before the first training launch, the A100 had passed earlier Phase-2 quality runs. At Phase-2b launch time:
@@ -91,7 +102,7 @@ approved Slurm partitions, with CUDA health rechecked inside every allocation. N
 
 - Ruff: pass across `jepa4d`, `scripts`, and `slurm`;
 - mypy: pass across 89 Phase-2b-relevant source files;
-- JEPA-4D pytest: 72 passed, one expected local-model skip, one third-party deprecation warning;
+- JEPA-4D pytest: 73 passed, one expected local-model skip, one third-party deprecation warning;
 - Slurm `--test-only`: test, preflight, and formal entrypoints accepted by the scheduler;
 - credential scan: supplied W&B and Hugging Face tokens absent from tracked files;
 - login environment: Python 3.12 dependency check passes;
