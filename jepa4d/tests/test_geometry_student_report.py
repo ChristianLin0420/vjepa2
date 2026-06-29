@@ -4,7 +4,11 @@ from pathlib import Path
 import numpy as np
 import plotly.graph_objects as go
 
-from jepa4d.visualization.geometry_student_report import build_geometry_student_report, write_phase2b_report
+from jepa4d.visualization.geometry_student_report import (
+    _peak_memory,
+    build_geometry_student_report,
+    write_phase2b_report,
+)
 
 
 def _comparison(*, failures: list[dict[str, str]] | None = None) -> dict:
@@ -79,6 +83,109 @@ def _histories() -> list[dict]:
     ]
 
 
+def _phase2c_comparison() -> dict:
+    record = _comparison()
+    record["schema_version"] = "jepa4d-phase2c-cross-sequence-comparison-v1"
+    for row in record["variants"]:
+        if row["variant_id"] == "vjepa_multilayer":
+            row["runtime"]["end_to_end_ms_per_frame"] = row["runtime"]["total_ms_per_frame"]
+            row["runtime"]["peak_end_to_end_memory_gb"] = 3.2
+    record["variants"][0]["sequence_metrics"] = {
+        "fr3_cabinet": {
+            "metric_abs_rel": 0.19,
+            "aligned_abs_rel": 0.08,
+            "metric_abs_log_scale_error": 0.31,
+        },
+        "fr3_large_cabinet": {
+            "metric_abs_rel": 0.24,
+            "aligned_abs_rel": 0.09,
+            "metric_abs_log_scale_error": 0.39,
+        },
+    }
+    record["variants"].append(
+        {
+            "variant_id": "vjepa_learned_fusion",
+            "family": "vjepa",
+            "role": "candidate",
+            "seed": 0,
+            "metrics": {
+                "metric_abs_rel": 0.13,
+                "aligned_abs_rel": 0.07,
+                "metric_rmse_m": 0.3,
+                "metric_delta_1": 0.9,
+            },
+            "runtime": {
+                "encoder_ms_per_frame": 8.0,
+                "head_ms_per_frame": 1.1,
+                "total_ms_per_frame": 9.1,
+                "end_to_end_ms_per_frame": 9.1,
+                "peak_encoder_memory_gb": 2.7,
+                "peak_end_to_end_memory_gb": 4.2,
+            },
+            "parameters": 90_000_003,
+            "model_metadata": {
+                "fusion_state": {
+                    "layer_order": [2, 5, 8],
+                    "final_coefficient": 0.94,
+                    "coefficient_layer_2": 0.03,
+                    "coefficient_layer_5": -0.01,
+                    "coefficient_layer_8": 0.04,
+                    "raw_gate_layer_2": 0.0902,
+                    "raw_gate_layer_5": -0.03,
+                    "raw_gate_layer_8": 0.1206,
+                }
+            },
+            "sequence_metrics": {
+                "fr3_cabinet": {
+                    "metric_abs_rel": 0.12,
+                    "aligned_abs_rel": 0.065,
+                    "metric_abs_log_scale_error": 0.18,
+                },
+                "fr3_large_cabinet": {
+                    "metric_abs_rel": 0.14,
+                    "aligned_abs_rel": 0.075,
+                    "metric_abs_log_scale_error": 0.22,
+                },
+            },
+            "notes": ["Three-scalar residual fusion."],
+        }
+    )
+    return record
+
+
+def _fusion_history() -> list[dict]:
+    return [
+        {
+            "variant": "vjepa_learned_fusion",
+            "seed": 0,
+            "epoch": epoch,
+            "loss": 0.5 / (epoch + 1),
+            "validation_metric_abs_rel": 0.2 - epoch * 0.02,
+            "layer_order": [2, 5, 8],
+            "final_coefficient": 1.0 - sum(coefficients),
+            "coefficient_layer_2": coefficients[0],
+            "coefficient_layer_5": coefficients[1],
+            "coefficient_layer_8": coefficients[2],
+        }
+        for epoch, coefficients in enumerate(((0.0, 0.0, 0.0), (0.01, -0.005, 0.02), (0.03, -0.01, 0.04)))
+    ]
+
+
+def _promotion_gate() -> dict:
+    return {
+        "schema_version": "jepa4d-phase2c-promotion-v1",
+        "decision": "retain_final_layer",
+        "promoted": False,
+        "conditions": {
+            "primary_macro_absrel_strictly_better": False,
+            "no_sequence_regression_above_5pct": True,
+            "latency_at_most_1p10x_final": True,
+            "peak_inference_memory_at_most_1p10x_final": True,
+            "zero_failures": True,
+        },
+    }
+
+
 def test_report_is_self_contained_and_renders_all_diagnostic_sections(tmp_path: Path) -> None:
     failure = {"variant": "vjepa_final", "seed": "2", "error": "bad <script>alert(1)</script>"}
     frames = [
@@ -109,11 +216,63 @@ def test_report_is_self_contained_and_renders_all_diagnostic_sections(tmp_path: 
     assert "Per-frame diagnostics" in document
     assert "Held-out log-depth calibration" in document
     assert "batch-1 end-to-end latency" in document
-    assert "Peak GPU memory GiB (max component)" in document
+    assert "Peak GPU memory GiB (co-resident when available)" in document
+    assert "Phase-2b geometry student diagnostics" in document
+    assert "Phase-2b geometry student: quality and resource trade-offs" in document
     assert "frame-007" in document
     assert "bad &lt;script&gt;alert(1)&lt;/script&gt;" in document
     assert "bad <script>alert(1)</script>" not in document
+    assert "Held-out sequence diagnostics" not in document
+    assert "Learned-fusion coefficient audit" not in document
+    assert "Formal promotion decision" not in document
     assert any("recorded failure" in warning for warning in artifacts.warnings)
+
+
+def test_report_renders_sequence_generalization_and_fusion_audit(tmp_path: Path) -> None:
+    comparison = _phase2c_comparison()
+    assert _peak_memory(comparison["variants"][-1]) == 4.2
+    artifacts = build_geometry_student_report(
+        comparison,
+        tmp_path / "phase2c-report.html",
+        training_history=[*_histories(), *_fusion_history()],
+        promotion_gate=_promotion_gate(),
+        static_png=False,
+    )
+
+    document = artifacts.html_path.read_text(encoding="utf-8")
+    assert document.count("Plotly.newPlot") >= 4
+    assert 'src="https://cdn.plot.ly' not in document
+    assert "Held-out sequence diagnostics" in document
+    assert "Per-sequence geometry generalization" in document
+    assert "Raw metric AbsRel" in document
+    assert "Median-aligned AbsRel" in document
+    assert "Absolute log-scale error" in document
+    assert "fr3_cabinet" in document
+    assert "fr3_large_cabinet" in document
+    assert "Learned-fusion coefficient audit" in document
+    assert "Effective coefficient trajectories" in document
+    assert "Best-checkpoint coefficients" in document
+    assert "checkpoint" in document
+    assert "vjepa_learned_fusion seed 0" in document
+    assert "Layer 5 coefficient (raw gate)" in document
+    assert "-0.01 (g=-0.03)" in document
+    assert "Phase-2c geometry student diagnostics" in document
+    assert "Phase-2c geometry student: quality and resource trade-offs" in document
+    assert "Phase-2b geometry student" not in document
+    assert "Metric Abs Rel vs reported latency" in document
+    assert "Metric Abs Rel vs reported peak GPU memory" in document
+    assert "measured co-resident batch-1" in document
+    assert "fallback reported total (non-co-resident policy)" in document
+    assert "It is not a measured batch-1 end-to-end latency" not in document
+    assert "Formal promotion decision" in document
+    assert "RETAIN FINAL LAYER" in document
+    assert "retain_final_layer" in document
+    assert "Primary Macro Absrel Strictly Better" in document
+    assert "PASS" in document
+    assert "FAIL" in document
+    assert "4.2" in document
+    assert any("Latency policies differ" in warning for warning in artifacts.warnings)
+    assert not any("fusion coefficients sum" in warning for warning in artifacts.warnings)
 
 
 def test_runner_wrapper_reads_jsonl_frames_and_exports_png(tmp_path: Path, monkeypatch) -> None:
@@ -127,7 +286,13 @@ def test_runner_wrapper_reads_jsonl_frames_and_exports_png(tmp_path: Path, monke
     target = np.stack((np.ones((4, 5)), np.full((4, 5), 2.0))).astype(np.float32)
     prediction = target.copy()
     prediction[1, 1:3, 2:4] = 4.0
-    np.savez_compressed(diagnostic_path, prediction_m=prediction, target_m=target)
+    np.savez_compressed(
+        diagnostic_path,
+        prediction_m=prediction,
+        target_m=target,
+        test_sample_ids=np.asarray(["fr3/office/midpoint-008", "fr3/office/worst-017"]),
+        test_selection_labels=np.asarray(["deterministic-sequence-midpoint", "post-hoc-worst-by-test-AbsRel"]),
+    )
 
     def fake_write_image(self, file, **kwargs) -> None:
         del self, kwargs
@@ -154,6 +319,10 @@ def test_runner_wrapper_reads_jsonl_frames_and_exports_png(tmp_path: Path, monke
     assert "Worst finite frame/variant rows" in document
     assert "Depth and relative-error grids" in document
     assert "vjepa_multilayer-seed0" in document
+    # Plotly JSON escapes slashes, but preserves the audit label and sample stem.
+    assert "worst-017" in document
+    assert "post-hoc-worst-by-test-AbsRel" in document
+    assert "frame 1 · prediction" not in document
 
 
 def test_missing_static_export_backend_is_non_fatal(tmp_path: Path, monkeypatch) -> None:

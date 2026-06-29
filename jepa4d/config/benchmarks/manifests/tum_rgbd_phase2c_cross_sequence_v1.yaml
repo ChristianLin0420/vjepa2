@@ -1,0 +1,80 @@
+schema_version: jepa4d-tum-cross-sequence-v1
+dataset_id: tum-rgbd-phase2c-camera-family-blocked
+version: 1.0.0
+license: CC-BY-4.0
+official: true
+split_policy: sequence-disjoint-camera-family-blocked-2-train-1-validation-2-test
+association_policy: global-greedy-one-to-one-rgb-depth-and-rgb-pose-v1
+association_max_delta_seconds: 0.02
+selection_policy: rank-midpoint-quantiles-over-association-valid-rgb-v1
+frames_per_sequence: 64
+primary_metric: equal-weight-macro-per-test-sequence-metric-absrel
+checkpoint_selection: validation-sequence-metric-absrel-only
+teacher_scale_policy: one-global-scale-fitted-on-pooled-training-sequences-and-frozen
+comparison_schema: jepa4d-phase2c-cross-sequence-comparison-v1
+sequences:
+  - sequence_id: freiburg1_xyz
+    split: train
+    camera_family: freiburg1
+    root_name: rgbd_dataset_freiburg1_xyz
+    source_url: https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_xyz.tgz
+    public_ground_truth: true
+    depth_scale: 5000.0
+    camera: {fx: 517.3, fy: 516.5, cx: 318.6, cy: 255.3}
+    archive:
+      filename: rgbd_dataset_freiburg1_xyz.tgz
+      bytes: 448204271
+      sha256: a0236d97b8c30cd93b653656d2b6c293ff7c982a4130ef2a1a8beecdb124ef98
+    selected_indices: [7, 21, 35, 48, 60, 72, 85, 97, 110, 123, 135, 147, 160, 172, 184, 197, 211, 224, 236, 248, 261, 273, 285, 298, 310, 322, 335, 347, 359, 372, 384, 396, 409, 421, 433, 446, 458, 470, 483, 495, 507, 520, 532, 544, 557, 569, 581, 594, 606, 619, 631, 643, 656, 668, 680, 693, 705, 717, 730, 742, 754, 767, 779, 791]
+  - sequence_id: freiburg1_floor
+    split: train
+    camera_family: freiburg1
+    root_name: rgbd_dataset_freiburg1_floor
+    source_url: https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_floor.tgz
+    public_ground_truth: true
+    depth_scale: 5000.0
+    camera: {fx: 517.3, fy: 516.5, cx: 318.6, cy: 255.3}
+    archive:
+      filename: rgbd_dataset_freiburg1_floor.tgz
+      bytes: 734599281
+      sha256: 16f8e7f13e0fc3983711b5d9db8ee663c73a5e29225b64dbe5ccaa9257e082bb
+    selected_indices: [9, 28, 47, 65, 84, 103, 122, 141, 160, 179, 197, 216, 235, 254, 273, 292, 310, 329, 348, 367, 386, 405, 423, 442, 461, 480, 499, 518, 537, 555, 574, 593, 613, 632, 652, 670, 691, 713, 735, 754, 773, 792, 811, 830, 849, 868, 887, 927, 946, 966, 985, 1005, 1024, 1043, 1061, 1080, 1099, 1119, 1138, 1157, 1176, 1194, 1213, 1232]
+  - sequence_id: freiburg2_xyz
+    split: validation
+    camera_family: freiburg2
+    root_name: rgbd_dataset_freiburg2_xyz
+    source_url: https://cvg.cit.tum.de/rgbd/dataset/freiburg2/rgbd_dataset_freiburg2_xyz.tgz
+    public_ground_truth: true
+    depth_scale: 5000.0
+    camera: {fx: 520.9, fy: 521.0, cx: 325.1, cy: 249.7}
+    archive:
+      filename: rgbd_dataset_freiburg2_xyz.tgz
+      bytes: 2201854648
+      sha256: a4903027a7fe6bc6573a1ce96a8afa5689f15d74f4a3f0627e91b5799f62e40b
+    selected_indices: [28, 84, 141, 197, 254, 310, 367, 423, 480, 536, 593, 649, 707, 764, 822, 883, 946, 1003, 1059, 1116, 1172, 1229, 1285, 1342, 1398, 1455, 1511, 1568, 1624, 1681, 1737, 1795, 1853, 1912, 1970, 2037, 2093, 2150, 2206, 2263, 2319, 2376, 2432, 2489, 2545, 2602, 2658, 2715, 2771, 2827, 2884, 2942, 3004, 3069, 3132, 3188, 3245, 3301, 3358, 3414, 3471, 3527, 3584, 3640]
+  - sequence_id: freiburg3_long_office_household
+    split: test
+    camera_family: freiburg3
+    root_name: rgbd_dataset_freiburg3_long_office_household
+    source_url: https://cvg.cit.tum.de/rgbd/dataset/freiburg3/rgbd_dataset_freiburg3_long_office_household.tgz
+    public_ground_truth: true
+    depth_scale: 5000.0
+    camera: {fx: 535.4, fy: 539.2, cx: 320.1, cy: 247.6}
+    archive:
+      filename: rgbd_dataset_freiburg3_long_office_household.tgz
+      bytes: 1483556251
+      sha256: c7cd8e1afb87c80e5744a356214819b110fa09b4744fa4ba0cc2382f9ba59e9c
+    selected_indices: [21, 63, 103, 142, 181, 224, 264, 304, 345, 385, 425, 465, 505, 546, 588, 629, 670, 709, 748, 787, 828, 869, 907, 947, 986, 1027, 1066, 1106, 1146, 1186, 1226, 1267, 1308, 1348, 1389, 1430, 1470, 1511, 1550, 1589, 1633, 1675, 1717, 1757, 1798, 1839, 1878, 1919, 1961, 2003, 2042, 2082, 2124, 2165, 2205, 2244, 2283, 2324, 2363, 2404, 2443, 2481, 2522, 2564]
+  - sequence_id: freiburg3_structure_texture_far
+    split: test
+    camera_family: freiburg3
+    root_name: rgbd_dataset_freiburg3_structure_texture_far
+    source_url: https://cvg.cit.tum.de/rgbd/dataset/freiburg3/rgbd_dataset_freiburg3_structure_texture_far.tgz
+    public_ground_truth: true
+    depth_scale: 5000.0
+    camera: {fx: 535.4, fy: 539.2, cx: 320.1, cy: 247.6}
+    archive:
+      filename: rgbd_dataset_freiburg3_structure_texture_far.tgz
+      bytes: 520806553
+      sha256: 3f58c707f54c93b68fecd77293630e96a76d7b0f2703eb8ad9cff45ba4bbb81a
+    selected_indices: [12, 27, 41, 57, 72, 86, 100, 114, 129, 143, 159, 173, 187, 201, 216, 230, 246, 260, 276, 290, 304, 320, 336, 350, 366, 380, 394, 408, 422, 436, 450, 464, 479, 493, 508, 522, 536, 551, 565, 579, 595, 609, 624, 638, 652, 666, 682, 697, 712, 726, 740, 754, 768, 783, 797, 812, 827, 842, 858, 872, 887, 901, 915, 930]

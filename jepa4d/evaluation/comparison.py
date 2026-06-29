@@ -20,6 +20,8 @@ class VariantResult:
     checkpoint: str | None = None
     checkpoint_sha256: str | None = None
     notes: list[str] = field(default_factory=list)
+    model_metadata: dict[str, Any] = field(default_factory=dict)
+    sequence_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

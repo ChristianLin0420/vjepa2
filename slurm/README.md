@@ -113,3 +113,60 @@ result directories are rejected; always choose a fresh output path.
 `JEPA4D_EPOCHS` cannot override the formal 60-epoch protocol, preflight cannot
 be bypassed, asset hashes cannot be weakened to metadata, and formal
 `WANDB_MODE` cannot be changed from `online`.
+
+## Phase 2c cross-sequence learned-fusion gate
+
+Phase 2c has a separate receipt namespace and Slurm chain so that the completed
+Phase 2b evidence remains immutable. Its bundle contract contains exactly five
+TUM sequences split by camera family into two training, one validation, and two
+held-out test sequences, with 128/64/128 selected frames. Formal output requires
+one teacher plus four three-seed probe variants, twelve checkpoints, four
+training-only normalization artifacts, sixty epochs per probe, and online W&B.
+
+Build or refresh the same Python 3.12 environment and download/check the bundle
+from the login node. This performs package installation, downloads, hashing,
+and safe extraction, but no CUDA work:
+
+```bash
+export JEPA4D_REPO_ROOT="$PWD"
+export JEPA4D_DATASET_PARENT="$PWD/checkpoints/datasets"
+export JEPA4D_MANIFEST="$PWD/jepa4d/config/benchmarks/manifests/tum_rgbd_phase2c_cross_sequence_v1.yaml"
+bash slurm/prepare_phase2c_login.sh
+```
+
+Use a unique gate directory for each exact repository revision to prevent two
+submission chains from replacing one another's receipts:
+
+```bash
+gate_id="$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$PWD/outputs/phase2c-gates/$gate_id"
+export JEPA4D_TEST_REPORT="$PWD/outputs/phase2c-gates/$gate_id/tests.json"
+export JEPA4D_PREFLIGHT_REPORT="$PWD/outputs/phase2c-gates/$gate_id/preflight.json"
+export JEPA4D_WANDB_ENTITY=crlc112358
+
+test_job=$(sbatch --parsable slurm/phase2c_tests.sbatch)
+preflight_job=$(sbatch --parsable --dependency="afterok:${test_job}" slurm/phase2c_preflight.sbatch)
+```
+
+Only submit formal training after inspecting the passing test and preflight
+receipts. The scheduler dependency remains as an additional guard:
+
+```bash
+export JEPA4D_OUTPUT_DIR="$PWD/outputs/jepa4d_phase2c/tum_rgbd_cross_sequence_${gate_id}"
+export JEPA4D_RUN_NAME="phase2c-cross-sequence-learned-fusion-${gate_id}"
+export JEPA4D_WANDB_PROJECT=jepa4d-worldmodel
+train_job=$(sbatch --parsable --dependency="afterok:${preflight_job}" slurm/phase2c_train.sbatch)
+printf 'tests=%s preflight=%s training=%s\n' "$test_job" "$preflight_job" "$train_job"
+```
+
+The test receipt binds the full repository and Python distribution set to a
+sustained CUDA check. Preflight recomputes those identities, fully hashes every
+model/source asset and every selected extracted RGB/depth file against its
+pinned archive, checks mixed-sequence B=N/V=1/T=1 inference at chunk sizes one
+and eight, exercises exact-final initialization and a finite-gradient optimizer
+step for residual fusion, reloads its checkpoint, renders a diagnostic report,
+and waits for an online W&B artifact receipt. Formal authorization recomputes
+all identities before the runner starts. Postflight requires exactly thirteen
+result rows, twelve checkpoints, 720 history rows, complete per-frame and
+per-sequence metrics, a self-contained interactive report, a bijective artifact
+manifest, and a backend-confirmed online W&B receipt.

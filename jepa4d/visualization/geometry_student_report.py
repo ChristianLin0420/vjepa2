@@ -13,7 +13,7 @@ import json
 import math
 import statistics
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -64,7 +64,9 @@ class _VariantSummary:
     primary_mean: float | None
     primary_std: float | None
     runtime_ms: float | None
+    runtime_policy: str
     memory_gib: float | None
+    memory_policy: str
     parameters: float | None
     raw_nll: float | None
     calibrated_nll: float | None
@@ -74,11 +76,39 @@ class _VariantSummary:
 @dataclass(frozen=True, slots=True)
 class _DepthGrid:
     label: str
-    frame_index: int
+    sample_id: str
+    selection_label: str | None
     abs_rel: float
     prediction: np.ndarray
     target: np.ndarray
     relative_error: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class _SequenceValue:
+    variant_id: str
+    seed: int | str | None
+    sequence_id: str
+    raw_abs_rel: float | None
+    aligned_abs_rel: float | None
+    scale_error: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _FusionState:
+    variant_id: str
+    seed: int | str | None
+    final_coefficient: float | None
+    coefficients: tuple[tuple[str, float], ...]
+    raw_gates: tuple[tuple[str, float], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _FusionHistoryPoint:
+    variant_id: str
+    seed: int | str | None
+    epoch: float
+    coefficients: tuple[tuple[str, float], ...]
 
 
 RecordInput = ComparisonRecord | Mapping[str, Any] | str | Path
@@ -90,6 +120,8 @@ def write_phase2b_report(
     comparison: dict[str, Any],
     histories: list[dict[str, Any]],
     diagnostics: dict[str, str] | None = None,
+    *,
+    promotion_gate: Mapping[str, Any] | None = None,
 ) -> Path:
     """Runner-friendly wrapper that writes the canonical local report path.
 
@@ -113,6 +145,7 @@ def write_phase2b_report(
         training_history=histories,
         per_frame_predictions=per_frame,
         diagnostic_npz=diagnostics,
+        promotion_gate=promotion_gate,
         static_png=output / "geometry_student_report.png",
     )
     return artifacts.html_path
@@ -125,6 +158,7 @@ def build_geometry_student_report(
     training_history: RowsInput = None,
     per_frame_predictions: RowsInput = None,
     diagnostic_npz: Mapping[str, str | Path] | None = None,
+    promotion_gate: Mapping[str, Any] | None = None,
     primary_metric: str | None = None,
     static_png: bool | str | Path = True,
 ) -> GeometryStudentReportArtifacts:
@@ -150,20 +184,27 @@ def build_geometry_student_report(
     """
 
     record = _load_record(comparison)
+    phase_label = _phase_label(record)
     history_rows = _load_rows(training_history, "training_history")
     frame_rows = _load_rows(per_frame_predictions, "per_frame_predictions")
     html_path = _html_output_path(Path(output))
     html_path.parent.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
+    promotion = _validated_promotion_gate(promotion_gate, warnings)
     variants = _variant_rows(record, warnings)
     selected_metric = _select_primary_metric(record, variants, primary_metric)
     summaries = _summaries(variants, selected_metric)
     colors = {value.variant_id: _COLORS[index % len(_COLORS)] for index, value in enumerate(summaries)}
 
     _comparison_diagnostics(record, variants, summaries, selected_metric, warnings)
-    overview = _overview_figure(summaries, selected_metric, colors)
+    overview = _overview_figure(summaries, selected_metric, colors, phase_label)
+    sequence_values = _sequence_values(variants, warnings)
+    sequence_figure = _sequence_figure(sequence_values, colors)
     training_figure = _training_figure(history_rows, colors, warnings)
+    fusion_states = _fusion_states(variants, warnings)
+    fusion_history = _fusion_history(history_rows)
+    fusion_figure = _fusion_figure(fusion_states, fusion_history)
     frame_values = _frame_values(frame_rows, selected_metric, warnings) if frame_rows else []
     npz_frame_values, depth_grids = _load_npz_diagnostics(diagnostic_npz, selected_metric, warnings)
     # Canonical per-frame rows carry dataset IDs/timestamps. NPZ-derived rows
@@ -179,8 +220,12 @@ def build_geometry_student_report(
 
     png_path = _export_png(overview, html_path, static_png, warnings)
     figures: list[tuple[str, go.Figure]] = [("overview", overview)]
+    if sequence_figure is not None:
+        figures.append(("sequence", sequence_figure))
     if training_figure is not None:
         figures.append(("training", training_figure))
+    if fusion_figure is not None:
+        figures.append(("fusion", fusion_figure))
     if frame_figure is not None:
         figures.append(("frame", frame_figure))
     if depth_figure is not None:
@@ -203,10 +248,16 @@ def build_geometry_student_report(
             failures=_failure_rows(record),
             history_rows=history_rows,
             frame_values=frame_values,
+            sequence_values=sequence_values,
+            fusion_states=fusion_states,
+            promotion_gate=promotion,
+            phase_label=phase_label,
             primary_metric=selected_metric,
             warnings=warnings,
             overview_html=figure_html["overview"],
+            sequence_html=figure_html.get("sequence"),
             training_html=figure_html.get("training"),
+            fusion_html=figure_html.get("fusion"),
             frame_html=figure_html.get("frame"),
             depth_grid_html=figure_html.get("depth"),
             depth_grid_count=len(depth_grids),
@@ -228,6 +279,16 @@ def _load_record(value: RecordInput) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise ValueError(f"comparison JSON must contain an object: {path}")
     return loaded
+
+
+def _phase_label(record: Mapping[str, Any]) -> str:
+    """Derive the user-facing experiment phase from the comparison schema."""
+    schema = str(record.get("schema_version", "")).lower().replace("-", "").replace("_", "")
+    if "phase2c" in schema:
+        return "Phase-2c"
+    if "phase2b" in schema:
+        return "Phase-2b"
+    return "JEPA-4D"
 
 
 def _load_rows(value: RowsInput, name: str) -> list[dict[str, Any]]:
@@ -315,6 +376,307 @@ def _number(value: Any, *, positive: bool = False) -> float | None:
     return number
 
 
+def _validated_promotion_gate(value: Mapping[str, Any] | None, warnings: list[str]) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    decision = value.get("decision")
+    promoted = value.get("promoted")
+    conditions = value.get("conditions")
+    if not isinstance(decision, str) or not decision:
+        warnings.append("Promotion gate has no valid decision and was omitted from the report.")
+        return None
+    if not isinstance(promoted, bool):
+        warnings.append("Promotion gate has no Boolean promoted state and was omitted from the report.")
+        return None
+    if (
+        not isinstance(conditions, Mapping)
+        or not conditions
+        or any(
+            not isinstance(condition, str) or not isinstance(passed, bool) for condition, passed in conditions.items()
+        )
+    ):
+        warnings.append("Promotion gate conditions are malformed and were omitted from the report.")
+        return None
+    return dict(value)
+
+
+def _sequence_values(variants: Sequence[Mapping[str, Any]], warnings: list[str]) -> list[_SequenceValue]:
+    values: list[_SequenceValue] = []
+    incomplete = 0
+    for row in variants:
+        sequence_metrics = row.get("sequence_metrics")
+        if sequence_metrics in (None, {}):
+            continue
+        if not isinstance(sequence_metrics, Mapping):
+            warnings.append(f"{row.get('variant_id', 'unknown')}: sequence_metrics were malformed and ignored.")
+            continue
+        for sequence_id, metrics in sequence_metrics.items():
+            if not isinstance(metrics, Mapping):
+                warnings.append(
+                    f"{row.get('variant_id', 'unknown')}/{sequence_id}: sequence metrics were malformed and ignored."
+                )
+                continue
+            raw = _number(metrics.get("metric_abs_rel", metrics.get("abs_rel")))
+            aligned = _number(metrics.get("aligned_abs_rel"))
+            scale_error = None
+            for key in ("metric_abs_log_scale_error", "abs_log_scale_error", "scale_error"):
+                if (candidate := _number(metrics.get(key))) is not None:
+                    scale_error = candidate
+                    break
+            if raw is None and aligned is None and scale_error is None:
+                warnings.append(
+                    f"{row.get('variant_id', 'unknown')}/{sequence_id}: no finite sequence diagnostics were found."
+                )
+                continue
+            if raw is None or aligned is None or scale_error is None:
+                incomplete += 1
+            values.append(
+                _SequenceValue(
+                    variant_id=str(row.get("variant_id", "unknown")),
+                    seed=row.get("seed"),
+                    sequence_id=str(sequence_id),
+                    raw_abs_rel=raw,
+                    aligned_abs_rel=aligned,
+                    scale_error=scale_error,
+                )
+            )
+    if incomplete:
+        warnings.append(
+            f"{incomplete} per-sequence row(s) omit raw AbsRel, aligned AbsRel, or absolute log-scale error."
+        )
+    return values
+
+
+def _sequence_figure(values: Sequence[_SequenceValue], colors: dict[str, str]) -> go.Figure | None:
+    if not values:
+        return None
+    panels = (
+        ("raw_abs_rel", "Raw metric AbsRel"),
+        ("aligned_abs_rel", "Median-aligned AbsRel"),
+        ("scale_error", "Absolute log-scale error"),
+    )
+    figure = make_subplots(rows=1, cols=3, subplot_titles=[title for _, title in panels])
+    grouped: dict[tuple[str, str], list[_SequenceValue]] = defaultdict(list)
+    for value in values:
+        grouped[(value.variant_id, str(value.seed))].append(value)
+        if value.variant_id not in colors:
+            colors[value.variant_id] = _COLORS[len(colors) % len(_COLORS)]
+    for panel_index, (field, title) in enumerate(panels, start=1):
+        del title
+        for trace_index, ((variant, seed), rows) in enumerate(grouped.items()):
+            points = [
+                (row.sequence_id, number)
+                for row in sorted(rows, key=lambda item: item.sequence_id)
+                if (number := getattr(row, field)) is not None
+            ]
+            if not points:
+                continue
+            seed_number = int(seed) if seed.lstrip("-").isdigit() else trace_index
+            figure.add_trace(
+                go.Scatter(
+                    x=[point[0] for point in points],
+                    y=[point[1] for point in points],
+                    mode="lines+markers",
+                    line={"color": colors[variant], "dash": _DASHES[seed_number % len(_DASHES)], "width": 2},
+                    marker={"color": colors[variant], "size": 8},
+                    name=f"{variant} seed {seed}",
+                    legendgroup=f"{variant}-{seed}",
+                    showlegend=panel_index == 1,
+                    customdata=[variant] * len(points),
+                    hovertemplate=("variant=%{customdata}<br>sequence=%{x}<br>value=%{y:.5g}<extra></extra>"),
+                ),
+                row=1,
+                col=panel_index,
+            )
+        figure.update_xaxes(title_text="Held-out sequence", row=1, col=panel_index)
+        figure.update_yaxes(title_text=panels[panel_index - 1][1] + " (lower is better)", row=1, col=panel_index)
+    figure.update_layout(
+        height=500,
+        template="plotly_white",
+        title="Per-sequence geometry generalization",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.08, "xanchor": "left", "x": 0},
+        margin={"t": 145, "b": 80, "l": 70, "r": 30},
+    )
+    return figure
+
+
+def _fusion_layers(state: Mapping[str, Any]) -> tuple[str, ...]:
+    configured = state.get("layer_order")
+    layers: set[str] = set()
+    if isinstance(configured, Sequence) and not isinstance(configured, str | bytes):
+        layers.update(str(value) for value in configured)
+    for key in state:
+        name = str(key)
+        for prefix in ("coefficient_layer_", "raw_gate_layer_"):
+            if name.startswith(prefix):
+                layers.add(name.removeprefix(prefix))
+    return tuple(
+        sorted(
+            layers,
+            key=lambda value: (not value.lstrip("-").isdigit(), int(value) if value.lstrip("-").isdigit() else value),
+        )
+    )
+
+
+def _fusion_values(
+    state: Mapping[str, Any],
+) -> tuple[float | None, tuple[tuple[str, float], ...], tuple[tuple[str, float], ...]]:
+    layers = _fusion_layers(state)
+    divisor = max(len(layers), 1)
+    coefficients: list[tuple[str, float]] = []
+    raw_gates: list[tuple[str, float]] = []
+    for layer in layers:
+        raw = _number(state.get(f"raw_gate_layer_{layer}"))
+        coefficient = _number(state.get(f"coefficient_layer_{layer}"))
+        if coefficient is None and raw is not None:
+            coefficient = math.tanh(raw) / divisor
+        if raw is not None:
+            raw_gates.append((layer, raw))
+        if coefficient is not None:
+            coefficients.append((layer, coefficient))
+    final = _number(state.get("final_coefficient"))
+    if final is None and coefficients:
+        final = 1.0 - sum(value for _, value in coefficients)
+    return final, tuple(coefficients), tuple(raw_gates)
+
+
+def _fusion_states(variants: Sequence[Mapping[str, Any]], warnings: list[str]) -> list[_FusionState]:
+    output: list[_FusionState] = []
+    for row in variants:
+        metadata = row.get("model_metadata")
+        if metadata in (None, {}):
+            continue
+        if not isinstance(metadata, Mapping):
+            warnings.append(f"{row.get('variant_id', 'unknown')}: model_metadata were malformed and ignored.")
+            continue
+        state = metadata.get("fusion_state")
+        if state is None:
+            continue
+        if not isinstance(state, Mapping):
+            warnings.append(f"{row.get('variant_id', 'unknown')}: fusion_state was malformed and ignored.")
+            continue
+        final, coefficients, raw_gates = _fusion_values(state)
+        if final is None and not coefficients:
+            warnings.append(f"{row.get('variant_id', 'unknown')}: fusion_state has no finite coefficients.")
+            continue
+        if final is not None and coefficients:
+            total = final + sum(value for _, value in coefficients)
+            if not math.isclose(total, 1.0, rel_tol=1e-5, abs_tol=1e-5):
+                warnings.append(
+                    f"{row.get('variant_id', 'unknown')} seed {row.get('seed')}: fusion coefficients sum to "
+                    f"{total:.6g}, not 1."
+                )
+        output.append(
+            _FusionState(
+                variant_id=str(row.get("variant_id", "unknown")),
+                seed=row.get("seed"),
+                final_coefficient=final,
+                coefficients=coefficients,
+                raw_gates=raw_gates,
+            )
+        )
+    return output
+
+
+def _fusion_history(rows: Sequence[Mapping[str, Any]]) -> list[_FusionHistoryPoint]:
+    output: list[_FusionHistoryPoint] = []
+    for fallback_epoch, row in enumerate(rows):
+        layers = _fusion_layers(row)
+        if not layers:
+            continue
+        final, coefficients, _ = _fusion_values(row)
+        epoch = _number(row.get("epoch", row.get("global_step", row.get("step", fallback_epoch))))
+        if epoch is None or (final is None and not coefficients):
+            continue
+        coefficient_values = list(coefficients)
+        if final is not None:
+            coefficient_values.insert(0, ("final", final))
+        output.append(
+            _FusionHistoryPoint(
+                variant_id=str(row.get("variant", row.get("variant_id", "unknown"))),
+                seed=row.get("seed"),
+                epoch=epoch,
+                coefficients=tuple(coefficient_values),
+            )
+        )
+    return output
+
+
+def _fusion_figure(states: Sequence[_FusionState], history: Sequence[_FusionHistoryPoint]) -> go.Figure | None:
+    if not states and not history:
+        return None
+    figure = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=("Effective coefficient trajectories", "Best-checkpoint coefficients"),
+        horizontal_spacing=0.14,
+    )
+    labels = sorted(
+        {label for point in history for label, _ in point.coefficients}
+        | {"final"}
+        | {layer for state in states for layer, _ in state.coefficients},
+        key=lambda value: (value != "final", not value.lstrip("-").isdigit(), value),
+    )
+    coefficient_colors = {label: _COLORS[index % len(_COLORS)] for index, label in enumerate(labels)}
+    grouped_history: dict[tuple[str, str, str], list[tuple[float, float]]] = defaultdict(list)
+    for point in history:
+        for label, value in point.coefficients:
+            grouped_history[(point.variant_id, str(point.seed), label)].append((point.epoch, value))
+    for trace_index, ((variant, seed, label), points) in enumerate(grouped_history.items()):
+        points.sort(key=lambda value: value[0])
+        seed_number = int(seed) if seed.lstrip("-").isdigit() else trace_index
+        display = "final" if label == "final" else f"layer {label}"
+        figure.add_trace(
+            go.Scatter(
+                x=[point[0] for point in points],
+                y=[point[1] for point in points],
+                mode="lines",
+                line={"color": coefficient_colors[label], "dash": _DASHES[seed_number % len(_DASHES)], "width": 2},
+                name=f"{display} · seed {seed}",
+                legendgroup=f"{label}-{seed}",
+                customdata=[variant] * len(points),
+                hovertemplate=("variant=%{customdata}<br>epoch=%{x}<br>coefficient=%{y:.5g}<extra></extra>"),
+            ),
+            row=1,
+            col=1,
+        )
+    for state_index, state in enumerate(states):
+        state_values = [("final", state.final_coefficient), *state.coefficients]
+        finite_values = [(label, value) for label, value in state_values if value is not None]
+        if not finite_values:
+            continue
+        figure.add_trace(
+            go.Bar(
+                x=["final" if label == "final" else f"layer {label}" for label, _ in finite_values],
+                y=[value for _, value in finite_values],
+                name=f"checkpoint · {state.variant_id} seed {state.seed}",
+                marker={"color": _COLORS[state_index % len(_COLORS)]},
+                showlegend=True,
+                customdata=[[state.variant_id, str(state.seed)] for _ in finite_values],
+                hovertemplate=(
+                    "variant=%{customdata[0]}<br>seed=%{customdata[1]}<br>coefficient=%{y:.5g}<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=2,
+        )
+    figure.add_hline(y=0.0, line={"color": "#7a7a7a", "width": 1}, row=1, col=1)
+    figure.add_hline(y=0.0, line={"color": "#7a7a7a", "width": 1}, row=1, col=2)
+    figure.update_xaxes(title_text="Epoch", row=1, col=1)
+    figure.update_yaxes(title_text="Effective feature coefficient", row=1, col=1)
+    figure.update_xaxes(title_text="Feature source", row=1, col=2)
+    figure.update_yaxes(title_text="Effective feature coefficient", row=1, col=2)
+    figure.update_layout(
+        barmode="group",
+        height=510,
+        template="plotly_white",
+        title="Learned residual-fusion audit",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.08, "xanchor": "left", "x": 0},
+        margin={"t": 145, "b": 70, "l": 70, "r": 30},
+    )
+    return figure
+
+
 def _mean(values: Iterable[float | None]) -> float | None:
     finite = [value for value in values if value is not None and math.isfinite(value)]
     return statistics.fmean(finite) if finite else None
@@ -334,7 +696,27 @@ def _runtime(row: Mapping[str, Any], key: str, *, positive: bool = False) -> flo
     return _number(runtime.get(key), positive=positive) if isinstance(runtime, Mapping) else None
 
 
+def _runtime_policy(row: Mapping[str, Any]) -> str:
+    if _runtime(row, "end_to_end_ms_per_frame", positive=True) is not None:
+        return "measured co-resident batch-1"
+    return "fallback reported total (non-co-resident policy)"
+
+
+def _memory_policy(row: Mapping[str, Any]) -> str:
+    if _runtime(row, "peak_end_to_end_memory_gb", positive=True) is not None:
+        return "measured co-resident peak"
+    return "fallback maximum isolated component"
+
+
+def _group_policy(rows: Sequence[Mapping[str, Any]], selector: Callable[[Mapping[str, Any]], str]) -> str:
+    policies = sorted({str(selector(row)) for row in rows})
+    return policies[0] if len(policies) == 1 else "mixed: " + "; ".join(policies)
+
+
 def _peak_memory(row: Mapping[str, Any]) -> float | None:
+    end_to_end = _runtime(row, "peak_end_to_end_memory_gb", positive=True)
+    if end_to_end is not None:
+        return end_to_end
     values = [
         value
         for key in ("peak_encoder_memory_gb", "peak_head_memory_gb", "peak_memory_gb")
@@ -362,7 +744,9 @@ def _summaries(variants: Sequence[Mapping[str, Any]], primary_metric: str) -> li
                 primary_mean=_mean(primary),
                 primary_std=_sample_std(primary),
                 runtime_ms=_mean(_runtime(row, "total_ms_per_frame", positive=True) for row in rows),
+                runtime_policy=_group_policy(rows, _runtime_policy),
                 memory_gib=_mean(_peak_memory(row) for row in rows),
+                memory_policy=_group_policy(rows, _memory_policy),
                 parameters=parameters,
                 raw_nll=_mean(_metric(row, "raw_log_depth_nll") for row in rows),
                 calibrated_nll=_mean(_metric(row, "calibrated_log_depth_nll") for row in rows),
@@ -398,7 +782,19 @@ def _comparison_diagnostics(
         warnings.append(
             "Non-positive or missing peak memory was treated as unavailable for: " + ", ".join(missing_memory) + "."
         )
-    if any(
+    measured_runtime = sorted(
+        {str(row.get("variant_id")) for row in variants if _runtime_policy(row).startswith("measured")}
+    )
+    fallback_runtime = sorted(
+        {str(row.get("variant_id")) for row in variants if _runtime_policy(row).startswith("fallback")}
+    )
+    if measured_runtime and fallback_runtime:
+        warnings.append(
+            "Latency policies differ across variants: measured co-resident batch-1 for "
+            f"{', '.join(measured_runtime)}; fallback non-co-resident totals for {', '.join(fallback_runtime)}. "
+            "Do not use the mixed-policy overview for cross-policy efficiency claims."
+        )
+    elif fallback_runtime and any(
         _runtime(row, "encoder_ms_per_frame") is not None and _runtime(row, "head_ms_per_frame") is not None
         for row in variants
     ):
@@ -424,15 +820,18 @@ def _comparison_diagnostics(
 
 
 def _overview_figure(
-    summaries: Sequence[_VariantSummary], primary_metric: str, colors: Mapping[str, str]
+    summaries: Sequence[_VariantSummary],
+    primary_metric: str,
+    colors: Mapping[str, str],
+    phase_label: str,
 ) -> go.Figure:
     figure = make_subplots(
         rows=2,
         cols=2,
         subplot_titles=(
             f"{_pretty(primary_metric)} seed variation",
-            f"{_pretty(primary_metric)} vs end-to-end latency",
-            f"{_pretty(primary_metric)} vs peak encoder memory",
+            f"{_pretty(primary_metric)} vs reported latency",
+            f"{_pretty(primary_metric)} vs reported peak GPU memory",
             "Held-out log-depth calibration",
         ),
         horizontal_spacing=0.13,
@@ -480,7 +879,11 @@ def _overview_figure(
                     mode="markers+text",
                     text=[value.variant_id],
                     textposition="top center",
-                    marker={"color": colors[value.variant_id], "size": 13},
+                    marker={
+                        "color": colors[value.variant_id],
+                        "size": 13,
+                        "symbol": "circle" if value.runtime_policy.startswith("measured") else "diamond-open",
+                    },
                     error_y={
                         "type": "data",
                         "array": [value.primary_std or 0.0],
@@ -488,7 +891,10 @@ def _overview_figure(
                     },
                     legendgroup=value.variant_id,
                     showlegend=False,
-                    hovertemplate="latency=%{x:.4g} ms/frame<br>metric=%{y:.5g}<extra></extra>",
+                    customdata=[value.runtime_policy],
+                    hovertemplate=(
+                        "latency=%{x:.4g} ms/frame<br>metric=%{y:.5g}<br>policy=%{customdata}<extra></extra>"
+                    ),
                 ),
                 row=1,
                 col=2,
@@ -501,7 +907,11 @@ def _overview_figure(
                     mode="markers+text",
                     text=[value.variant_id],
                     textposition="top center",
-                    marker={"color": colors[value.variant_id], "size": 13},
+                    marker={
+                        "color": colors[value.variant_id],
+                        "size": 13,
+                        "symbol": "circle" if value.memory_policy.startswith("measured") else "diamond-open",
+                    },
                     error_y={
                         "type": "data",
                         "array": [value.primary_std or 0.0],
@@ -509,7 +919,8 @@ def _overview_figure(
                     },
                     legendgroup=value.variant_id,
                     showlegend=False,
-                    hovertemplate="memory=%{x:.4g} GiB<br>metric=%{y:.5g}<extra></extra>",
+                    customdata=[value.memory_policy],
+                    hovertemplate=("memory=%{x:.4g} GiB<br>metric=%{y:.5g}<br>policy=%{customdata}<extra></extra>"),
                 ),
                 row=2,
                 col=1,
@@ -540,17 +951,25 @@ def _overview_figure(
         )
     figure.update_yaxes(title_text=f"{primary_metric} (lower is better)", row=1, col=1)
     figure.update_xaxes(
-        title_text="Reported latency (ms/frame; chunked encoder + batch-1 head)", rangemode="tozero", row=1, col=2
+        title_text="Reported latency (ms/frame; circle=co-resident, open diamond=fallback)",
+        rangemode="tozero",
+        row=1,
+        col=2,
     )
     figure.update_yaxes(title_text=f"{primary_metric} (lower is better)", row=1, col=2)
-    figure.update_xaxes(title_text="Peak GPU allocation (GiB; max encoder/head)", rangemode="tozero", row=2, col=1)
+    figure.update_xaxes(
+        title_text="Peak GPU allocation (GiB; circle=co-resident, open diamond=fallback)",
+        rangemode="tozero",
+        row=2,
+        col=1,
+    )
     figure.update_yaxes(title_text=f"{primary_metric} (lower is better)", row=2, col=1)
     figure.update_yaxes(title_text="Gaussian NLL (lower is better)", row=2, col=2)
     figure.update_layout(
         barmode="group",
         height=920,
         template="plotly_white",
-        title="Phase-2b geometry student: quality and resource trade-offs",
+        title=f"{phase_label} geometry student: quality and resource trade-offs",
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.04, "xanchor": "left", "x": 0},
         margin={"t": 135, "b": 70, "l": 80, "r": 40},
     )
@@ -710,6 +1129,8 @@ def _load_npz_diagnostics(
             with np.load(path, allow_pickle=False) as payload:
                 prediction = _depth_stack(payload["prediction_m"])
                 target = _depth_stack(payload["target_m"])
+                sample_ids = _npz_string_vector(payload, "test_sample_ids", len(prediction))
+                selection_labels = _npz_string_vector(payload, "test_selection_labels", len(prediction))
         except Exception as error:  # A corrupt optional diagnostic must not hide the comparison report.
             warnings.append(f"Could not load diagnostic NPZ for {label} ({type(error).__name__}: {error}).")
             continue
@@ -719,6 +1140,10 @@ def _load_npz_diagnostics(
             )
             continue
         variant, seed = _diagnostic_identity(str(label))
+        resolved_sample_ids = sample_ids or tuple(str(index) for index in range(len(prediction)))
+        resolved_selection_labels: tuple[str | None, ...] = (
+            selection_labels if selection_labels is not None else (None,) * len(prediction)
+        )
         frame_metrics: list[float] = []
         frame_errors: list[np.ndarray] = []
         for frame_index, (predicted, truth) in enumerate(zip(prediction, target, strict=True)):
@@ -742,7 +1167,8 @@ def _load_npz_diagnostics(
                     {
                         "variant": variant,
                         "seed": seed,
-                        "frame_id": frame_index,
+                        "frame_id": resolved_sample_ids[frame_index],
+                        "selection_label": resolved_selection_labels[frame_index],
                         "value": metric,
                     }
                 )
@@ -754,7 +1180,8 @@ def _load_npz_diagnostics(
         grids.append(
             _DepthGrid(
                 label=str(label),
-                frame_index=worst,
+                sample_id=resolved_sample_ids[worst],
+                selection_label=resolved_selection_labels[worst],
                 abs_rel=frame_metrics[worst],
                 prediction=_downsample_grid(prediction[worst]),
                 target=_downsample_grid(target[worst]),
@@ -766,6 +1193,18 @@ def _load_npz_diagnostics(
             f"NPZ depth grids were rendered, but their per-frame AbsRel was not mixed with primary metric {primary_metric}."
         )
     return frame_rows, grids
+
+
+def _npz_string_vector(payload: Any, key: str, expected: int) -> tuple[str, ...] | None:
+    if key not in payload.files:
+        return None
+    values = np.asarray(payload[key])
+    if values.ndim != 1 or len(values) != expected:
+        raise ValueError(f"{key} must have shape [{expected}], got {values.shape}")
+    return tuple(
+        value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+        for value in values.tolist()
+    )
 
 
 def _depth_stack(value: np.ndarray) -> np.ndarray:
@@ -800,8 +1239,12 @@ def _depth_grid_figure(grids: Sequence[_DepthGrid]) -> go.Figure | None:
         title
         for grid in grids
         for title in (
-            f"{grid.label} · frame {grid.frame_index} · prediction",
-            "Target depth",
+            (
+                f"{grid.label} · sample {grid.sample_id} · prediction"
+                if grid.selection_label is not None
+                else f"{grid.label} · frame {grid.sample_id} · prediction"
+            ),
+            (f"Target · selection: {grid.selection_label}" if grid.selection_label is not None else "Target depth"),
             f"Relative error · AbsRel {grid.abs_rel:.4f}",
         )
     ]
@@ -843,8 +1286,9 @@ def _depth_grid_figure(grids: Sequence[_DepthGrid]) -> go.Figure | None:
         height=max(520, 245 * len(grids)),
         template="plotly_white",
         title=(
-            "Worst held-out depth/error grids · shared depth scale uses pooled 1st–99th percentiles; "
-            "shared error scale saturates at pooled 95th percentile"
+            "Highest-error persisted depth/error panels · sample IDs and selection labels are retained; "
+            "shared depth scale uses pooled 1st–99th percentiles; shared error scale saturates at the pooled "
+            "95th percentile"
         ),
         coloraxis={
             "colorscale": "Viridis",
@@ -922,6 +1366,26 @@ def _failure_rows(record: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) if isinstance(row, Mapping) else {"error": str(row)} for row in failures]
 
 
+def _promotion_section(gate: Mapping[str, Any] | None) -> str:
+    if gate is None:
+        return ""
+    decision = html.escape(str(gate["decision"]))
+    promoted = bool(gate["promoted"])
+    outcome = "PROMOTE LEARNED FUSION" if promoted else "RETAIN FINAL LAYER"
+    conditions = gate["conditions"]
+    assert isinstance(conditions, Mapping)
+    condition_table = _table(
+        ("Promotion condition", "Status"),
+        [(_pretty(str(condition)), "PASS" if bool(passed) else "FAIL") for condition, passed in conditions.items()],
+    )
+    return (
+        "<section><h2>Formal promotion decision</h2>"
+        f"<div class='card'><b>{outcome}</b><br>Recorded decision: <code>{decision}</code></div>"
+        "<p>Every preregistered condition must pass before the learned-fusion candidate replaces the final-layer "
+        f"reference.</p>{condition_table}</section>"
+    )
+
+
 def _document(
     *,
     html_path: Path,
@@ -931,10 +1395,16 @@ def _document(
     failures: Sequence[Mapping[str, Any]],
     history_rows: Sequence[Mapping[str, Any]],
     frame_values: Sequence[Mapping[str, Any]],
+    sequence_values: Sequence[_SequenceValue],
+    fusion_states: Sequence[_FusionState],
+    promotion_gate: Mapping[str, Any] | None,
+    phase_label: str,
     primary_metric: str,
     warnings: Sequence[str],
     overview_html: str,
+    sequence_html: str | None,
     training_html: str | None,
+    fusion_html: str | None,
     frame_html: str | None,
     depth_grid_html: str | None,
     depth_grid_count: int,
@@ -961,6 +1431,22 @@ def _document(
         if has_training and training_html is not None
         else "<p class='muted'>No local training history was available. Persist epoch rows in the formal runner to enable this section.</p>"
     )
+    sequence_section = (
+        "<section><h2>Held-out sequence diagnostics</h2>"
+        f"<p>{len(sequence_values)} variant/seed/sequence rows rendered. Raw and aligned AbsRel remain separate; "
+        "absolute log-scale error isolates metric-scale transfer.</p>"
+        f"{sequence_html}{_sequence_table(sequence_values)}</section>"
+        if sequence_html is not None
+        else ""
+    )
+    fusion_section = (
+        "<section><h2>Learned-fusion coefficient audit</h2>"
+        "<p>Effective coefficients are read from epoch history and the validation-selected checkpoint. "
+        "Negative intermediate coefficients indicate learned suppression rather than mixture weight.</p>"
+        f"{fusion_html}{_fusion_table(fusion_states)}</section>"
+        if fusion_html is not None
+        else ""
+    )
     frame_section = (
         f"<p>{len(frame_values)} finite per-frame measurements rendered. The table highlights the worst held-out frames.</p>"
         f"{frame_html}{_worst_frame_table(frame_values, primary_metric)}"
@@ -969,17 +1455,22 @@ def _document(
     )
     depth_section = (
         f"<p>{depth_grid_count} diagnostic NPZ artifact(s) rendered at a bounded 96×96 display resolution. Each row "
-        "selects that run's worst finite held-out frame. Prediction and target share one global depth scale; relative "
-        f"error uses a separate shared scale.</p>{depth_grid_html}"
+        "selects the highest-error finite frame among the persisted diagnostic panels, and its caption preserves the "
+        "sample ID and predeclared or post-hoc selection label. Post-hoc worst-by-test-AbsRel panels are visualization "
+        "aids, not model-selection evidence. Prediction and target share one global depth scale; relative error uses a "
+        f"separate shared scale.</p>{depth_grid_html}"
         if depth_grid_html is not None
         else "<p class='muted'>No usable prediction/target NPZ diagnostics were available.</p>"
     )
     status = "PARTIAL / FAILURES RECORDED" if failures else "COMPLETE RECORD / NO RECORDED FAILURES"
     status_class = "bad" if failures else "good"
-    provenance = html.escape(json.dumps(_json_safe(record), indent=2, sort_keys=True))
+    provenance_record = dict(record)
+    if promotion_gate is not None:
+        provenance_record["promotion_gate"] = dict(promotion_gate)
+    provenance = html.escape(json.dumps(_json_safe(provenance_record), indent=2, sort_keys=True))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Phase-2b geometry student report — {experiment}</title>
+<title>{phase_label} geometry student report — {experiment}</title>
 <style>
 :root{{--ink:#17212b;--muted:#5c6873;--line:#d8dee4;--panel:#f7f9fb;--warn:#fff4ce;--good:#e6f4ea;--bad:#fce8e6}}
 body{{font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink);max-width:1500px;margin:0 auto;padding:2rem}}
@@ -994,18 +1485,21 @@ th,td{{border:1px solid var(--line);padding:.45rem .55rem;text-align:right;white
 th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){{text-align:left}} .muted{{color:var(--muted)}}
 pre{{background:#0d1117;color:#e6edf3;padding:1rem;overflow:auto;border-radius:6px;max-height:34rem}}
 </style></head><body>
-<h1>Phase-2b geometry student diagnostics</h1>
+<h1>{phase_label} geometry student diagnostics</h1>
 <p class="status {status_class}">{status}</p>
 <div class="meta"><div class="card"><b>Experiment</b><br>{experiment}</div><div class="card"><b>Schema</b><br>{schema}</div>
 <div class="card"><b>Dataset manifest</b><br>{manifest}</div><div class="card"><b>Split hash</b><br><code>{split_hash}</code></div>
 <div class="card"><b>Primary metric</b><br><code>{html.escape(primary_metric)}</code> (lower is better)</div>
 <div class="card"><b>Linked artifacts</b><br>{wandb} · PNG: {png}</div></div>
 {warnings_html}
-<section><h2>Decision overview</h2><p>Diamonds and error bars show mean ± sample SD across completed seeds. Teacher or single-run rows have no inferred variance. Accuracy, latency, memory, and NLL use separate axes and retain their native units. Reported encoder timing is chunked per-frame throughput while head timing is batch-1 latency; their sum is not a measured batch-1 end-to-end latency.</p>
+<section><h2>Decision overview</h2><p>Diamonds and error bars in the seed panel show mean ± sample SD across completed seeds. Teacher or single-run rows have no inferred variance. Accuracy, latency, memory, and NLL use separate axes and retain their native units. Filled circles in resource panels denote measured co-resident batch-1 values; open diamonds denote fallback totals or isolated-component peaks. Timing and memory policies are also named in hover text and the summary table, and cross-policy efficiency comparisons are not valid.</p>
 {overview_html}</section>
+{_promotion_section(promotion_gate)}
+{sequence_section}
 <section><h2>Variant summary</h2>{_summary_table(summaries, primary_metric)}</section>
 <section><h2>Seed-level measurements</h2><p class="muted">Values are read directly from the comparison record; missing measurements remain explicit.</p>{_seed_table(variants, primary_metric)}</section>
 <section><h2>Training curves</h2>{training_section}</section>
+{fusion_section}
 <section><h2>Per-frame diagnostics</h2>{frame_section}</section>
 <section><h2>Depth and relative-error grids</h2>{depth_section}</section>
 <section><h2>Failures</h2>{_failure_table(failures)}</section>
@@ -1020,7 +1514,9 @@ def _summary_table(values: Sequence[_VariantSummary], primary_metric: str) -> st
         "Seeds",
         f"{primary_metric} mean ± sample SD",
         "Latency ms/frame",
-        "Peak GPU memory GiB (max component)",
+        "Timing policy",
+        "Peak GPU memory GiB (co-resident when available)",
+        "Memory policy",
         "Total parameters",
         "Raw NLL",
         "Calibrated NLL",
@@ -1038,11 +1534,83 @@ def _summary_table(values: Sequence[_VariantSummary], primary_metric: str) -> st
                 str(value.seed_count) if value.seed_count else "fixed / unseeded",
                 metric,
                 _fmt(value.runtime_ms),
+                value.runtime_policy,
                 _fmt(value.memory_gib),
+                value.memory_policy,
                 _fmt(value.parameters, integer=True),
                 _fmt(value.raw_nll),
                 _fmt(value.calibrated_nll),
                 _fmt(value.variance_multiplier),
+            )
+        )
+    return _table(headers, rows)
+
+
+def _sequence_table(values: Sequence[_SequenceValue]) -> str:
+    return _table(
+        (
+            "Variant",
+            "Seed",
+            "Held-out sequence",
+            "Raw metric AbsRel",
+            "Median-aligned AbsRel",
+            "Absolute log-scale error",
+        ),
+        [
+            (
+                value.variant_id,
+                "—" if value.seed is None else str(value.seed),
+                value.sequence_id,
+                _fmt(value.raw_abs_rel),
+                _fmt(value.aligned_abs_rel),
+                _fmt(value.scale_error),
+            )
+            for value in values
+        ],
+    )
+
+
+def _fusion_table(states: Sequence[_FusionState]) -> str:
+    if not states:
+        return "<p class='muted'>No validation-selected fusion checkpoint state was supplied.</p>"
+    layers = sorted(
+        {layer for state in states for layer, _ in state.coefficients}
+        | {layer for state in states for layer, _ in state.raw_gates},
+        key=lambda value: (not value.lstrip("-").isdigit(), int(value) if value.lstrip("-").isdigit() else value),
+    )
+    headers = (
+        "Variant",
+        "Seed",
+        "Final coefficient",
+        *(f"Layer {layer} coefficient (raw gate)" for layer in layers),
+        "Coefficient sum",
+        "Intermediate L1",
+    )
+    rows = []
+    for state in states:
+        coefficients = dict(state.coefficients)
+        raw_gates = dict(state.raw_gates)
+        layer_cells = []
+        for layer in layers:
+            coefficient = coefficients.get(layer)
+            raw = raw_gates.get(layer)
+            if coefficient is None and raw is None:
+                layer_cells.append("—")
+            elif raw is None:
+                layer_cells.append(_fmt(coefficient))
+            else:
+                layer_cells.append(f"{_fmt(coefficient)} (g={_fmt(raw)})")
+        coefficient_sum = (
+            None if state.final_coefficient is None else state.final_coefficient + sum(coefficients.values())
+        )
+        rows.append(
+            (
+                state.variant_id,
+                "—" if state.seed is None else str(state.seed),
+                _fmt(state.final_coefficient),
+                *layer_cells,
+                _fmt(coefficient_sum),
+                _fmt(sum(abs(value) for value in coefficients.values())),
             )
         )
     return _table(headers, rows)

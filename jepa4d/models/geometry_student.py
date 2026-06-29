@@ -32,6 +32,86 @@ class DenseGeometryProbe(nn.Module):
         return log_depth, log_variance
 
 
+class BoundedResidualLayerFusion(nn.Module):
+    """Fuse three standardized intermediate layers into a canonical final layer.
+
+    For final feature ``F`` and intermediate features ``I_l`` the output is
+
+    ``F + sum(tanh(g_l) / 3 * (I_l - F))``.
+
+    The three scalar gates start at zero, so initialization is exactly the
+    final-layer baseline while every gate still receives a first-step
+    gradient.  Coefficients are signed and each is bounded to ``[-1/3, 1/3]``.
+    """
+
+    def __init__(self, input_dim: int, layer_order: tuple[int, int, int] = (2, 5, 8)) -> None:
+        super().__init__()
+        if input_dim <= 0:
+            raise ValueError("input_dim must be positive")
+        if len(layer_order) != 3 or len(set(layer_order)) != 3:
+            raise ValueError("layer_order must contain exactly three unique layers")
+        self.input_dim = input_dim
+        self.layer_order = layer_order
+        self.raw_gates = nn.Parameter(torch.zeros(len(layer_order)))
+
+    def effective_coefficients(self) -> torch.Tensor:
+        return torch.tanh(self.raw_gates) / len(self.layer_order)
+
+    def forward(self, final: torch.Tensor, intermediates: torch.Tensor) -> torch.Tensor:
+        expected_intermediate_shape = (final.shape[0], len(self.layer_order), *final.shape[1:])
+        if final.ndim != 4 or final.shape[1] != self.input_dim:
+            raise ValueError(f"expected final [B,{self.input_dim},H,W], got {tuple(final.shape)}")
+        if tuple(intermediates.shape) != expected_intermediate_shape:
+            raise ValueError(f"expected intermediates {expected_intermediate_shape}, got {tuple(intermediates.shape)}")
+        final_float = final.float()
+        intermediate_float = intermediates.float()
+        if not torch.isfinite(final_float).all() or not torch.isfinite(intermediate_float).all():
+            raise ValueError("fusion features must be finite")
+        coefficients = self.effective_coefficients().view(1, -1, 1, 1, 1)
+        return final_float + (coefficients * (intermediate_float - final_float.unsqueeze(1))).sum(dim=1)
+
+
+class ResidualFusionGeometryProbe(nn.Module):
+    """A three-parameter residual layer fuser followed by the shared probe."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 64,
+        layer_order: tuple[int, int, int] = (2, 5, 8),
+    ) -> None:
+        super().__init__()
+        self.input_dim = input_dim
+        self.layer_order = layer_order
+        self.fusion = BoundedResidualLayerFusion(input_dim, layer_order)
+        self.probe = DenseGeometryProbe(input_dim, hidden_dim)
+
+    def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        if features.ndim != 5 or features.shape[1] != 1 + len(self.layer_order):
+            raise ValueError(
+                f"expected [B,{1 + len(self.layer_order)},C,H,W] final-plus-intermediate features, "
+                f"got {tuple(features.shape)}"
+            )
+        fused = self.fusion(features[:, 0], features[:, 1:])
+        return self.probe(fused)
+
+    def fusion_state(self) -> dict[str, float | list[int]]:
+        coefficients = self.fusion.effective_coefficients().detach().cpu()
+        values: dict[str, float | list[int]] = {
+            "layer_order": list(self.layer_order),
+            "final_coefficient": float(1.0 - coefficients.sum()),
+        }
+        for layer, raw, effective in zip(
+            self.layer_order,
+            self.fusion.raw_gates.detach().cpu(),
+            coefficients,
+            strict=True,
+        ):
+            values[f"raw_gate_layer_{layer}"] = float(raw)
+            values[f"coefficient_layer_{layer}"] = float(effective)
+        return values
+
+
 def geometry_probe_loss(
     predicted_log_depth: torch.Tensor,
     predicted_log_variance: torch.Tensor,

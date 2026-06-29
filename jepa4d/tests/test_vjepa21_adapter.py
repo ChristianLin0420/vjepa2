@@ -31,6 +31,13 @@ def test_mock_multiview_shape() -> None:
     assert bundle.dense_tokens.shape[:3] == (1, 3, 1)
 
 
+def test_mock_can_disable_intermediate_capture() -> None:
+    batch = from_view_sequences([frames(1)])
+    bundle = VJEPA21FeatureExtractor(mock=True, capture_layers=())(batch)
+    assert bundle.layer_tokens == {}
+    assert bundle.metadata["model"]["captured_layers"] == []
+
+
 @pytest.mark.skipif(
     not Path("checkpoints/vjepa2.1-vitb-fpc64-384/model.safetensors").exists(), reason="local model absent"
 )

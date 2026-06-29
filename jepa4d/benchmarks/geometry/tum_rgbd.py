@@ -23,6 +23,8 @@ class TUMSample:
     depth_path: Path
     translation: np.ndarray
     quaternion_xyzw: np.ndarray
+    sequence_id: str = "fr1_xyz"
+    depth_scale: float = 5000.0
 
 
 def _read_index(path: Path, columns: int) -> list[tuple[float, list[str]]]:
@@ -67,7 +69,14 @@ def load_tum_subset(root: Path, frame_count: int = 8, max_delta: float = 0.03) -
     return load_tum_indices(root, indices, max_delta=max_delta)
 
 
-def load_tum_indices(root: Path, indices: list[int], max_delta: float = 0.03) -> list[TUMSample]:
+def load_tum_indices(
+    root: Path,
+    indices: list[int],
+    max_delta: float = 0.03,
+    *,
+    sequence_id: str = "fr1_xyz",
+    depth_scale: float = 5000.0,
+) -> list[TUMSample]:
     rgb = _read_index(root / "rgb.txt", 2)
     depth = _read_index(root / "depth.txt", 2)
     groundtruth = _read_index(root / "groundtruth.txt", 8)
@@ -80,20 +89,24 @@ def load_tum_indices(root: Path, indices: list[int], max_delta: float = 0.03) ->
         _, pose_values = _nearest(groundtruth, timestamp, max_delta)
         samples.append(
             TUMSample(
-                sample_id=f"fr1_xyz_{index:04d}",
+                sample_id=f"{sequence_id}_{index:04d}",
                 timestamp=timestamp,
                 rgb_path=root / rgb_values[0],
                 depth_path=root / depth_values[0],
                 translation=np.asarray(pose_values[:3], dtype=np.float64),
                 quaternion_xyzw=np.asarray(pose_values[3:], dtype=np.float64),
+                sequence_id=sequence_id,
+                depth_scale=depth_scale,
             )
         )
     return samples
 
 
-def load_depth(path: Path, output_size: tuple[int, int]) -> torch.Tensor:
+def load_depth(path: Path, output_size: tuple[int, int], depth_scale: float = 5000.0) -> torch.Tensor:
+    if depth_scale <= 0:
+        raise ValueError("depth_scale must be positive")
     values = np.asarray(Image.open(path), dtype=np.uint16).copy()
-    depth = torch.from_numpy(values.astype(np.float32) / 5000.0)[None, None]
+    depth = torch.from_numpy(values.astype(np.float32) / depth_scale)[None, None]
     return F.interpolate(depth, size=output_size, mode="nearest")[0, 0]
 
 

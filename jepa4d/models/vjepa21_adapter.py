@@ -50,6 +50,7 @@ class VJEPA21FeatureExtractor(nn.Module):
         mock_embed_dim: int = 64,
         device: str | torch.device = "cpu",
         implementation_path: str | Path | None = None,
+        capture_layers: tuple[int, ...] | None = None,
     ) -> None:
         super().__init__()
         if model_name not in MODEL_SPECS:
@@ -62,6 +63,14 @@ class VJEPA21FeatureExtractor(nn.Module):
         self.backend = backend
         self.device_name = str(device)
         self.implementation_path = None if implementation_path is None else Path(implementation_path)
+        available_layers = tuple(int(value) for value in self.spec["layers"])
+        self.capture_layers = available_layers if capture_layers is None else tuple(capture_layers)
+        if len(set(self.capture_layers)) != len(self.capture_layers) or not set(self.capture_layers) <= set(
+            available_layers
+        ):
+            raise ValueError(
+                f"capture_layers must be a unique subset of {available_layers}, got {self.capture_layers}"
+            )
         self.embed_dim = mock_embed_dim if mock else int(self.spec["embed_dim"])
         self.model: nn.Module | None = None
         self._loaded_backend = "mock" if mock else "unloaded"
@@ -80,6 +89,7 @@ class VJEPA21FeatureExtractor(nn.Module):
             "input_size": 384,
             "tubelet_size": self.spec["tubelet"],
             "intermediate_layers": list(self.spec["layers"]),
+            "captured_layers": list(self.capture_layers),
             "checkpoint": None if self.checkpoint is None else str(self.checkpoint),
             "load_seconds": self._load_seconds,
         }
@@ -213,6 +223,7 @@ class VJEPA21FeatureExtractor(nn.Module):
             layer_tokens = {
                 layer: value.reshape(batch_size, views, output_steps, 576, self.embed_dim)
                 for layer, value in raw_layers.items()
+                if layer in self.capture_layers
             }
         else:
             assert self.model is not None
@@ -221,7 +232,7 @@ class VJEPA21FeatureExtractor(nn.Module):
             blocks = getattr(self.model, "layer", getattr(self.model, "blocks", None))
             handles = []
             if blocks is not None:
-                for layer in self.spec["layers"]:
+                for layer in self.capture_layers:
 
                     def capture(
                         _module: nn.Module, _inputs: tuple[torch.Tensor, ...], output: Any, index: int = layer
@@ -243,7 +254,8 @@ class VJEPA21FeatureExtractor(nn.Module):
                 for layer, value in captured.items()
             }
             final_layer = int(self.spec["layers"][-1])
-            layer_tokens[final_layer] = dense.reshape(batch_size, views, output_steps, 576, self.embed_dim)
+            if final_layer in self.capture_layers:
+                layer_tokens[final_layer] = dense.reshape(batch_size, views, output_steps, 576, self.embed_dim)
         dense = dense.reshape(batch_size, views, output_steps, 576, self.embed_dim)
         if is_image:
             valid = batch.valid_mask

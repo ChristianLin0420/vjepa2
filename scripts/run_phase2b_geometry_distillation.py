@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import math
 import os
 import platform
 import subprocess
@@ -21,13 +22,20 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import typer
+import yaml
 from PIL import Image
 
 from jepa4d.benchmarks.geometry.tum_rgbd import depth_metrics, load_tum_indices, validate_archive
+from jepa4d.benchmarks.geometry.tum_rgbd_bundle import load_cross_sequence_bundle
 from jepa4d.data.rgb_input import collate_rgb_inputs, from_view_sequences
 from jepa4d.evaluation.comparison import ComparisonRecord, VariantResult
 from jepa4d.models.geometry_belief import GeometryBeliefHead
-from jepa4d.models.geometry_student import DenseGeometryProbe, geometry_probe_loss, rgb_grid_features
+from jepa4d.models.geometry_student import (
+    DenseGeometryProbe,
+    ResidualFusionGeometryProbe,
+    geometry_probe_loss,
+    rgb_grid_features,
+)
 from jepa4d.models.vjepa21_adapter import VJEPA21FeatureExtractor
 
 app = typer.Typer(add_completion=False)
@@ -47,6 +55,24 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _state_dict_sha256(state: dict[str, torch.Tensor]) -> str:
+    digest = hashlib.sha256()
+    for name, value in sorted(state.items()):
+        tensor = value.detach().cpu().contiguous()
+        digest.update(name.encode())
+        digest.update(str(tensor.dtype).encode())
+        digest.update(str(tuple(tensor.shape)).encode())
+        digest.update(tensor.numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _parameter_gradient_norm(parameters: list[torch.nn.Parameter]) -> float:
+    squared = [
+        parameter.grad.detach().float().square().sum() for parameter in parameters if parameter.grad is not None
+    ]
+    return float(torch.stack(squared).sum().sqrt()) if squared else 0.0
 
 
 def _command(command: list[str]) -> str:
@@ -235,7 +261,10 @@ def _targets(samples: list[Any], size: tuple[int, int]) -> torch.Tensor:
     values = []
     for item in samples:
         raw = np.asarray(Image.open(item.depth_path), dtype=np.uint16).copy()
-        depth = torch.from_numpy(raw.astype(np.float32) / 5000.0)
+        depth_scale = float(getattr(item, "depth_scale", 5000.0))
+        if depth_scale <= 0:
+            raise ValueError(f"invalid depth scale for {item.sample_id}: {depth_scale}")
+        depth = torch.from_numpy(raw.astype(np.float32) / depth_scale)
         values.append(_center_crop_square(depth))
     return F.interpolate(torch.stack(values).unsqueeze(1), size=size, mode="nearest")[:, 0]
 
@@ -345,6 +374,40 @@ def _normalize_multilayer(
     )
 
 
+def _normalize_phase2c_layers(
+    train: dict[str, torch.Tensor], validation: dict[str, torch.Tensor], test: dict[str, torch.Tensor]
+) -> tuple[
+    dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    dict[str, dict[str, torch.Tensor]],
+]:
+    """Build final, fixed-average, and learned inputs from the same train-only statistics."""
+    final = _normalize(train["vjepa_final"], validation["vjepa_final"], test["vjepa_final"])
+    final_values = (final[0], final[1], final[2])
+    normalized_layers: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
+    statistics: dict[str, dict[str, torch.Tensor]] = {"vjepa_final": final[3]}
+    for layer in (2, 5, 8):
+        key = f"vjepa_layer_{layer}"
+        if key not in train or key not in validation or key not in test:
+            raise ValueError(f"missing required Phase 2c intermediate layer: {key}")
+        normalized = _normalize(train[key], validation[key], test[key])
+        normalized_layers.append((normalized[0], normalized[1], normalized[2]))
+        statistics[key] = normalized[3]
+
+    fixed_values = [
+        torch.stack((final_values[index], *(layer[index] for layer in normalized_layers))).mean(dim=0)
+        for index in range(3)
+    ]
+    learned_values = [
+        torch.stack((final_values[index], *(layer[index] for layer in normalized_layers)), dim=1) for index in range(3)
+    ]
+    variants: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {
+        "vjepa_final": final_values,
+        "vjepa_multilayer": (fixed_values[0], fixed_values[1], fixed_values[2]),
+        "vjepa_learned_fusion": (learned_values[0], learned_values[1], learned_values[2]),
+    }
+    return variants, statistics
+
+
 def _raw_metrics(predicted: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
     mask = _valid(target)
     values = predicted[mask]
@@ -401,12 +464,34 @@ def _evaluate_depths(
         # Validate on the target-defined mask before calling the aligned helper,
         # which historically excluded invalid predictions from its denominator.
         _raw_metrics(predicted, target)
-        aligned, _, _ = depth_metrics(predicted, target)
+        aligned, alignment_scale, _ = depth_metrics(predicted, target)
         row = {f"aligned_{key}": value for key, value in aligned.items()}
+        row["metric_abs_log_scale_error"] = abs(math.log(max(alignment_scale, 1e-12)))
         if include_metric:
             row.update(_raw_metrics(predicted, target))
         rows.append(row)
     return {key: float(np.mean([row[key] for row in rows])) for key in rows[0]}
+
+
+def _evaluate_sequence_macro(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    samples: list[Any],
+) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+    if len(predictions) != len(targets) or len(predictions) != len(samples):
+        raise ValueError("prediction, target, and sample counts differ")
+    grouped_indices: dict[str, list[int]] = defaultdict(list)
+    for index, sample in enumerate(samples):
+        grouped_indices[str(getattr(sample, "sequence_id", "unknown"))].append(index)
+    per_sequence = {
+        sequence_id: _evaluate_depths(predictions[indices], targets[indices])
+        for sequence_id, indices in sorted(grouped_indices.items())
+    }
+    if not per_sequence:
+        raise ValueError("sequence-macro evaluation has no sequences")
+    metric_keys = tuple(next(iter(per_sequence.values())))
+    macro = {key: float(np.mean([metrics[key] for metrics in per_sequence.values()])) for key in metric_keys}
+    return macro, per_sequence
 
 
 def _per_frame_rows(
@@ -426,12 +511,14 @@ def _per_frame_rows(
                 "variant": variant,
                 "seed": seed,
                 "frame_id": sample.sample_id,
+                "sequence_id": str(getattr(sample, "sequence_id", "fr1_xyz")),
                 "timestamp": sample.timestamp,
                 "valid_target_fraction": float(valid.float().mean()),
                 "prediction_coverage_on_valid_target": 1.0,
                 "prediction_mean_m": float(prediction[valid].mean()),
                 "target_mean_m": float(target[valid].mean()),
                 "alignment_scale": alignment_scale,
+                "metric_abs_log_scale_error": abs(math.log(max(alignment_scale, 1e-12))),
                 **raw,
                 **{f"aligned_{key}": value for key, value in aligned.items()},
             }
@@ -439,14 +526,59 @@ def _per_frame_rows(
     return rows
 
 
+def _compact_prediction_diagnostics(
+    diagnostics: dict[str, torch.Tensor],
+    test_samples: list[Any],
+    validation_samples: list[Any],
+    seed: int,
+) -> dict[str, np.ndarray]:
+    """Persist bounded, reproducible panels while evaluating every held-out frame."""
+    sequence_indices: dict[str, list[int]] = defaultdict(list)
+    for index, sample in enumerate(test_samples):
+        sequence_indices[str(sample.sequence_id)].append(index)
+    chosen: set[int] = set()
+    selection_labels: dict[int, str] = {}
+    for indices in sequence_indices.values():
+        midpoint = indices[len(indices) // 2]
+        chosen.add(midpoint)
+        selection_labels[midpoint] = "deterministic-sequence-midpoint"
+        if seed == 0:
+            errors = [
+                _raw_metrics(diagnostics["prediction_m"][index], diagnostics["target_m"][index])["metric_abs_rel"]
+                for index in indices
+            ]
+            worst = indices[int(np.argmax(errors))]
+            chosen.add(worst)
+            selection_labels[worst] = (
+                "deterministic-sequence-midpoint-and-post-hoc-worst-by-test-AbsRel"
+                if worst == midpoint
+                else "post-hoc-worst-by-test-AbsRel"
+            )
+    test_indices = sorted(chosen)
+
+    validation_indices_by_sequence: dict[str, list[int]] = defaultdict(list)
+    for index, sample in enumerate(validation_samples):
+        validation_indices_by_sequence[str(sample.sequence_id)].append(index)
+    validation_indices = sorted(indices[len(indices) // 2] for indices in validation_indices_by_sequence.values())
+    output: dict[str, np.ndarray] = {}
+    for key, value in diagnostics.items():
+        indices = validation_indices if key.startswith("validation_") else test_indices
+        output[key] = value[indices].detach().cpu().numpy()
+    output["test_sample_ids"] = np.asarray([test_samples[index].sample_id for index in test_indices])
+    output["test_selection_labels"] = np.asarray([selection_labels[index] for index in test_indices])
+    output["validation_sample_ids"] = np.asarray([validation_samples[index].sample_id for index in validation_indices])
+    return output
+
+
 def _calibrate_log_variance(
-    model: DenseGeometryProbe,
+    model: torch.nn.Module,
     validation_features: torch.Tensor,
     validation_target: torch.Tensor,
     test_features: torch.Tensor,
     test_target: torch.Tensor,
     device: str,
-) -> tuple[float, float, float]:
+    test_samples: list[Any] | None = None,
+) -> tuple[float, float, float, dict[str, dict[str, float]]]:
     model.eval()
     with torch.inference_mode():
         val_log_depth, val_logvar = model(validation_features.to(device))
@@ -457,15 +589,32 @@ def _calibrate_log_variance(
     multiplier = float(
         (((val_log_depth - val_truth).square() / val_logvar.exp().clamp_min(1e-8))[val_mask]).mean().clamp(1e-4, 1e4)
     )
-    residual = (test_log_depth - test_truth)[test_mask]
-    raw_variance = test_logvar.exp()[test_mask].clamp_min(1e-8)
+    residual = test_log_depth - test_truth
+    raw_variance = test_logvar.exp().clamp_min(1e-8)
     calibrated_variance = raw_variance * multiplier
     raw_nll = 0.5 * (raw_variance.log() + residual.square() / raw_variance)
     calibrated_nll = 0.5 * (calibrated_variance.log() + residual.square() / calibrated_variance)
-    return multiplier, float(raw_nll.mean()), float(calibrated_nll.mean())
+    sequence_nll: dict[str, dict[str, float]] = {}
+    if test_samples is None:
+        raw_value = float(raw_nll[test_mask].mean())
+        calibrated_value = float(calibrated_nll[test_mask].mean())
+    else:
+        if len(test_samples) != len(test_features):
+            raise ValueError("test sample count differs during sequence-macro NLL evaluation")
+        grouped_indices: dict[str, list[int]] = defaultdict(list)
+        for index, sample in enumerate(test_samples):
+            grouped_indices[str(sample.sequence_id)].append(index)
+        for sequence_id, indices in grouped_indices.items():
+            sequence_nll[sequence_id] = {
+                "raw_log_depth_nll": float(raw_nll[indices][test_mask[indices]].mean()),
+                "calibrated_log_depth_nll": float(calibrated_nll[indices][test_mask[indices]].mean()),
+            }
+        raw_value = float(np.mean([metrics["raw_log_depth_nll"] for metrics in sequence_nll.values()]))
+        calibrated_value = float(np.mean([metrics["calibrated_log_depth_nll"] for metrics in sequence_nll.values()]))
+    return multiplier, raw_value, calibrated_value, sequence_nll
 
 
-def _head_latency(model: DenseGeometryProbe, features: torch.Tensor, device: str) -> float:
+def _head_latency(model: torch.nn.Module, features: torch.Tensor, device: str) -> float:
     value = features[:1].to(device)
     model.eval()
     with torch.inference_mode():
@@ -479,6 +628,85 @@ def _head_latency(model: DenseGeometryProbe, features: torch.Tensor, device: str
     return (time.perf_counter() - started) * 10.0
 
 
+def _profile_vjepa_probe_end_to_end(
+    extractor: VJEPA21FeatureExtractor,
+    model: torch.nn.Module,
+    samples: list[Any],
+    variant: str,
+    statistics: dict[str, dict[str, torch.Tensor]],
+    device: str,
+    *,
+    warmup_iterations: int = 30,
+    measured_iterations: int = 30,
+    repetitions: int = 3,
+) -> dict[str, Any]:
+    """Profile the co-resident batch-1 encoder→normalization→fusion/probe path."""
+    if variant not in {"vjepa_final", "vjepa_multilayer", "vjepa_learned_fusion"}:
+        raise ValueError(f"unsupported end-to-end profile variant: {variant}")
+    if warmup_iterations <= 0 or measured_iterations <= 0 or repetitions <= 0:
+        raise ValueError("profile warmup, iterations, and repetitions must be positive")
+    stride = max(1, len(samples) // 8)
+    selected_samples = samples[::stride][:8]
+    batches = [_single_image_batch([sample]) for sample in selected_samples]
+    capture_layers = () if variant == "vjepa_final" else (2, 5, 8)
+    extractor.capture_layers = capture_layers
+    model.eval()
+    model.to(device)
+    required_statistics = {"vjepa_final"}
+    if variant != "vjepa_final":
+        required_statistics.update(f"vjepa_layer_{layer}" for layer in (2, 5, 8))
+    if not required_statistics <= statistics.keys():
+        raise ValueError(f"profile statistics are missing: {sorted(required_statistics - statistics.keys())}")
+    device_statistics = {
+        key: {name: tensor.to(device) for name, tensor in statistics[key].items()}
+        for key in sorted(required_statistics)
+    }
+
+    def normalized_grid(bundle: Any, key: str, layer: int | None = None) -> torch.Tensor:
+        tokens = bundle.dense_tokens if layer is None else bundle.layer_tokens[layer]
+        grid = tokens[:, 0, 0].reshape(1, 24, 24, -1).permute(0, 3, 1, 2).contiguous()
+        values = device_statistics[key]
+        return ((grid.float() - values["mean"]) / values["std"]).half()
+
+    def forward(batch: Any) -> tuple[torch.Tensor, torch.Tensor]:
+        bundle = extractor(batch)
+        final = normalized_grid(bundle, "vjepa_final")
+        if variant == "vjepa_final":
+            return model(final)
+        layers = [normalized_grid(bundle, f"vjepa_layer_{layer}", layer) for layer in (2, 5, 8)]
+        if variant == "vjepa_multilayer":
+            return model(torch.stack((final, *layers)).mean(dim=0))
+        return model(torch.stack((final, *layers), dim=1))
+
+    with torch.inference_mode():
+        for index in range(warmup_iterations):
+            outputs = forward(batches[index % len(batches)])
+        del outputs
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        repetition_ms = []
+        for repetition in range(repetitions):
+            torch.cuda.synchronize()
+            started = time.perf_counter()
+            for index in range(measured_iterations):
+                outputs = forward(batches[(repetition * measured_iterations + index) % len(batches)])
+            torch.cuda.synchronize()
+            repetition_ms.append((time.perf_counter() - started) * 1000.0 / measured_iterations)
+            del outputs
+    return {
+        "profile": "co-resident-batch1-encoder-normalization-fusion-probe-v1",
+        "input_boundary": "preloaded RGBInputBatch before device transfer and model preprocessing",
+        "capture_layers": list(capture_layers),
+        "sample_ids": [sample.sample_id for sample in selected_samples],
+        "warmup_iterations": warmup_iterations,
+        "measured_iterations_per_repetition": measured_iterations,
+        "repetitions": repetitions,
+        "repetition_ms_per_frame": repetition_ms,
+        "median_ms_per_frame": float(np.median(repetition_ms)),
+        "peak_end_to_end_memory_gb": torch.cuda.max_memory_allocated() / 1024**3,
+    }
+
+
 def _train_variant(
     variant: str,
     seed: int,
@@ -487,6 +715,7 @@ def _train_variant(
     test_features: torch.Tensor,
     train_target: torch.Tensor,
     validation_target: torch.Tensor,
+    test_target_24: torch.Tensor,
     test_target_518: torch.Tensor,
     teacher_target: torch.Tensor,
     output: Path,
@@ -494,6 +723,8 @@ def _train_variant(
     epochs: int,
     run: Any,
     encoder_runtime: dict[str, float],
+    validation_samples: list[Any] | None = None,
+    test_samples: list[Any] | None = None,
 ) -> tuple[VariantResult, list[dict[str, Any]], dict[str, torch.Tensor]]:
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -501,8 +732,48 @@ def _train_variant(
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
     training_started = time.perf_counter()
-    model = DenseGeometryProbe(train_features.shape[1]).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
+    is_learned_fusion = variant == "vjepa_learned_fusion"
+    input_dim = train_features.shape[2] if is_learned_fusion else train_features.shape[1]
+    model: torch.nn.Module
+    if is_learned_fusion:
+        model = ResidualFusionGeometryProbe(input_dim).to(device)
+        assert isinstance(model, ResidualFusionGeometryProbe)
+        with torch.inference_mode():
+            initial_features = train_features[:1].to(device)
+            initial_fused = model.fusion(initial_features[:, 0], initial_features[:, 1:])
+            if not torch.equal(initial_fused, initial_features[:, 0].float()):
+                raise RuntimeError("learned fusion does not initialize as the exact final layer")
+            candidate_prediction = model(initial_features)
+            final_prediction = model.probe(initial_features[:, 0])
+            if not all(
+                torch.equal(left, right) for left, right in zip(candidate_prediction, final_prediction, strict=True)
+            ):
+                raise RuntimeError("learned fusion initial prediction differs from its final-layer control")
+        probe_parameters = list(model.probe.parameters())
+        gate_parameters = list(model.fusion.parameters())
+        optimizer = torch.optim.AdamW(
+            [
+                {"params": probe_parameters, "weight_decay": 1e-4, "name": "probe"},
+                {"params": gate_parameters, "weight_decay": 1e-4, "name": "fusion_gates"},
+            ],
+            lr=2e-3,
+        )
+        probe_initial_sha256 = _state_dict_sha256(model.probe.state_dict())
+    else:
+        model = DenseGeometryProbe(input_dim).to(device)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
+        assert isinstance(model, DenseGeometryProbe)
+        probe_parameters = list(model.parameters())
+        gate_parameters = []
+        probe_initial_sha256 = _state_dict_sha256(model.state_dict())
+    model_parameter_ids = [id(parameter) for parameter in model.parameters() if parameter.requires_grad]
+    optimizer_parameter_ids = [
+        id(parameter) for group in optimizer.param_groups for parameter in group["params"] if parameter.requires_grad
+    ]
+    if len(optimizer_parameter_ids) != len(set(optimizer_parameter_ids)) or set(optimizer_parameter_ids) != set(
+        model_parameter_ids
+    ):
+        raise RuntimeError("optimizer does not own every trainable parameter exactly once")
     generator = torch.Generator().manual_seed(seed)
     best_score = float("inf")
     best_epoch = -1
@@ -519,6 +790,8 @@ def _train_variant(
         valid_pixel_count = 0
         component_sums: dict[str, float] = defaultdict(float)
         gradient_norms: list[float] = []
+        probe_gradient_norms: list[float] = []
+        gate_gradient_norms: list[float] = []
         for offset in range(0, len(order), batch_size):
             index = order[offset : offset + batch_size]
             features = train_features[index].to(device)
@@ -529,6 +802,8 @@ def _train_variant(
             log_depth, logvar = model(features)
             loss, parts = geometry_probe_loss(log_depth, logvar, target, _valid(target), teacher_depth=teacher)
             loss.backward()
+            probe_gradient_norms.append(_parameter_gradient_norm(probe_parameters))
+            gate_gradient_norms.append(_parameter_gradient_norm(gate_parameters))
             gradient_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
             weighted_loss_sum += float(loss.detach()) * batch_valid_pixels
@@ -539,7 +814,13 @@ def _train_variant(
         model.eval()
         with torch.inference_mode():
             validation_prediction = model(validation_features.to(device))[0].exp().cpu()
-        validation_absrel = _evaluate_depths(validation_prediction, validation_target)["metric_abs_rel"]
+        if validation_samples is None:
+            validation_metrics = _evaluate_depths(validation_prediction, validation_target)
+        else:
+            validation_metrics, _ = _evaluate_sequence_macro(
+                validation_prediction, validation_target, validation_samples
+            )
+        validation_absrel = validation_metrics["metric_abs_rel"]
         if validation_absrel < best_score:
             best_score = validation_absrel
             best_epoch = epoch
@@ -552,6 +833,8 @@ def _train_variant(
             "loss": weighted_loss_sum / valid_pixel_count,
             "validation_metric_abs_rel": validation_absrel,
             "gradient_norm": float(np.mean(gradient_norms)),
+            "probe_gradient_norm": float(np.mean(probe_gradient_norms)),
+            "gate_gradient_norm": float(np.mean(gate_gradient_norms)),
             "learning_rate": float(optimizer.param_groups[0]["lr"]),
             "best_validation_metric_abs_rel": best_score,
             "is_best": epoch == best_epoch,
@@ -559,6 +842,9 @@ def _train_variant(
             "gpu_allocated_gb": torch.cuda.memory_allocated() / 1024**3,
             "gpu_reserved_gb": torch.cuda.memory_reserved() / 1024**3,
         }
+        if is_learned_fusion:
+            assert isinstance(model, ResidualFusionGeometryProbe)
+            row.update(model.fusion_state())
         row.update({key: value / valid_pixel_count for key, value in component_sums.items()})
         history.append(row)
         with history_path.open("a") as stream:
@@ -568,21 +854,30 @@ def _train_variant(
             if epoch == 0:
                 run.define_metric(f"{prefix}/epoch")
                 run.define_metric(f"{prefix}/*", step_metric=f"{prefix}/epoch")
-            run.log(
-                {
-                    f"{prefix}/epoch": epoch,
-                    f"{prefix}/loss": row["loss"],
-                    f"{prefix}/validation_abs_rel": validation_absrel,
-                    f"{prefix}/gradient_norm": row["gradient_norm"],
-                    f"{prefix}/epoch_seconds": row["epoch_seconds"],
-                    f"{prefix}/gpu_allocated_gb": row["gpu_allocated_gb"],
-                    f"{prefix}/gpu_reserved_gb": row["gpu_reserved_gb"],
-                    f"{prefix}/nll": row["nll"],
-                    f"{prefix}/scale_invariant": row["scale_invariant"],
-                    f"{prefix}/gradient": row["gradient"],
-                    f"{prefix}/distillation": row["distillation"],
-                }
-            )
+            logged = {
+                f"{prefix}/epoch": epoch,
+                f"{prefix}/loss": row["loss"],
+                f"{prefix}/validation_abs_rel": validation_absrel,
+                f"{prefix}/gradient_norm": row["gradient_norm"],
+                f"{prefix}/epoch_seconds": row["epoch_seconds"],
+                f"{prefix}/gpu_allocated_gb": row["gpu_allocated_gb"],
+                f"{prefix}/gpu_reserved_gb": row["gpu_reserved_gb"],
+                f"{prefix}/nll": row["nll"],
+                f"{prefix}/scale_invariant": row["scale_invariant"],
+                f"{prefix}/gradient": row["gradient"],
+                f"{prefix}/distillation": row["distillation"],
+                f"{prefix}/probe_gradient_norm": row["probe_gradient_norm"],
+                f"{prefix}/gate_gradient_norm": row["gate_gradient_norm"],
+            }
+            if is_learned_fusion:
+                logged.update(
+                    {
+                        f"{prefix}/{key}": value
+                        for key, value in row.items()
+                        if key.startswith("raw_gate_") or key.startswith("coefficient_") or key == "final_coefficient"
+                    }
+                )
+            run.log(logged)
         if epoch == 0 or (epoch + 1) % 10 == 0 or epoch + 1 == epochs:
             _log_event(
                 output,
@@ -605,13 +900,36 @@ def _train_variant(
         {
             "variant": variant,
             "seed": seed,
-            "input_dim": train_features.shape[1],
+            "input_dim": input_dim,
+            "model_type": type(model).__name__,
             "state_dict": best_state,
             "validation_abs_rel": best_score,
             "best_epoch": best_epoch,
+            "probe_initial_sha256": probe_initial_sha256,
+            "fusion_state": model.fusion_state() if isinstance(model, ResidualFusionGeometryProbe) else None,
         },
         checkpoint,
     )
+    reloaded: torch.nn.Module
+    if is_learned_fusion:
+        reloaded = ResidualFusionGeometryProbe(input_dim).to(device)
+    else:
+        reloaded = DenseGeometryProbe(input_dim).to(device)
+    checkpoint_payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    reloaded.load_state_dict(checkpoint_payload["state_dict"], strict=True)
+    model.eval()
+    reloaded.eval()
+    with torch.inference_mode():
+        reload_input = validation_features[:1].to(device)
+        original_reload_prediction = model(reload_input)
+        reloaded_prediction = reloaded(reload_input)
+    if not all(
+        torch.equal(original, restored)
+        for original, restored in zip(original_reload_prediction, reloaded_prediction, strict=True)
+    ):
+        raise RuntimeError(f"strict checkpoint reload changed predictions for {variant} seed {seed}")
+    del model
+    model = reloaded
     model.eval()
     with torch.inference_mode():
         validation_log_depth, validation_logvar = model(validation_features.to(device))
@@ -619,15 +937,22 @@ def _train_variant(
         test_prediction = F.interpolate(
             test_log_depth.exp().unsqueeze(1), size=test_target_518.shape[-2:], mode="bilinear", align_corners=False
         )[:, 0].cpu()
-    metrics = _evaluate_depths(test_prediction, test_target_518)
-    multiplier, raw_nll, calibrated_nll = _calibrate_log_variance(
+    sequence_metrics: dict[str, dict[str, float]] = {}
+    if test_samples is None:
+        metrics = _evaluate_depths(test_prediction, test_target_518)
+    else:
+        metrics, sequence_metrics = _evaluate_sequence_macro(test_prediction, test_target_518, test_samples)
+    multiplier, raw_nll, calibrated_nll, sequence_nll = _calibrate_log_variance(
         model,
         validation_features,
         validation_target,
         test_features,
-        F.interpolate(test_target_518.unsqueeze(1), size=test_features.shape[-2:], mode="nearest")[:, 0],
+        test_target_24,
         device,
+        test_samples=test_samples,
     )
+    for sequence_id, values in sequence_nll.items():
+        sequence_metrics[sequence_id].update(values)
     metrics.update(
         {
             "validation_metric_abs_rel": best_score,
@@ -646,13 +971,31 @@ def _train_variant(
     encoder_parameters = int(encoder_runtime.get("parameters", 0))
     parameters = trainable_parameters + encoder_parameters
     family = "rgb" if variant == "rgb_probe" else "vjepa"
-    role = "non_jepa_baseline" if variant == "rgb_probe" else ("ablation" if variant == "vjepa_final" else "ours")
+    roles = {
+        "rgb_probe": "non_jepa_baseline",
+        "vjepa_final": "reference_default",
+        "vjepa_multilayer": "fixed_fusion_baseline",
+        "vjepa_learned_fusion": "candidate",
+    }
+    role = roles.get(variant, "ablation")
     notes = [
         "Best checkpoint selected only on validation metric AbsRel.",
         "VGGT training-scale auxiliary loss weight=0.25; test targets are never used for training or selection.",
     ]
     if variant == "rgb_probe":
         notes.append("Non-JEPA representation baseline uses the same VGGT-assisted supervision as the JEPA probes.")
+    model_metadata: dict[str, Any] = {
+        "probe_initial_sha256": probe_initial_sha256,
+        "checkpoint_reload": "strict-prediction-equality-pass",
+    }
+    if isinstance(model, ResidualFusionGeometryProbe):
+        model_metadata.update(
+            {
+                "fusion_formula": "F + sum(tanh(g_l)/3 * (I_l - F)), l in {2,5,8}",
+                "fusion_state": model.fusion_state(),
+                "additional_trainable_parameters": 3,
+            }
+        )
     result = VariantResult(
         variant_id=variant,
         family=family,
@@ -675,6 +1018,8 @@ def _train_variant(
         checkpoint=str(checkpoint),
         checkpoint_sha256=_sha256(checkpoint),
         notes=notes,
+        model_metadata=model_metadata,
+        sequence_metrics=sequence_metrics,
     )
     diagnostics = {
         "prediction_m": test_prediction,
@@ -704,6 +1049,83 @@ def _aggregate(results: list[VariantResult]) -> dict[str, dict[str, float]]:
     return output
 
 
+def _phase2c_promotion_gate(
+    results: list[VariantResult],
+    failures: list[dict[str, str]],
+    *,
+    results_integrity_valid: bool = True,
+) -> dict[str, Any]:
+    grouped: dict[str, list[VariantResult]] = defaultdict(list)
+    for result in results:
+        grouped[result.variant_id].append(result)
+    final = grouped.get("vjepa_final", [])
+    candidate = grouped.get("vjepa_learned_fusion", [])
+    if len(final) != 3 or len(candidate) != 3:
+        raise ValueError("promotion gate requires three final and three learned-fusion seeds")
+    final_primary = float(np.mean([result.metrics["metric_abs_rel"] for result in final]))
+    candidate_primary = float(np.mean([result.metrics["metric_abs_rel"] for result in candidate]))
+    test_sequences = (
+        "freiburg3_long_office_household",
+        "freiburg3_structure_texture_far",
+    )
+    per_sequence: dict[str, dict[str, float | bool]] = {}
+    sequence_condition = True
+    for sequence_id in test_sequences:
+        final_value = float(np.mean([result.sequence_metrics[sequence_id]["metric_abs_rel"] for result in final]))
+        candidate_value = float(
+            np.mean([result.sequence_metrics[sequence_id]["metric_abs_rel"] for result in candidate])
+        )
+        relative_regression = (candidate_value - final_value) / max(final_value, 1e-12)
+        passes = relative_regression <= 0.05
+        sequence_condition &= passes
+        per_sequence[sequence_id] = {
+            "final_absrel": final_value,
+            "candidate_absrel": candidate_value,
+            "relative_regression": relative_regression,
+            "passes_maximum_5pct_regression": passes,
+        }
+
+    final_latency = float(np.mean([result.runtime["total_ms_per_frame"] for result in final]))
+    candidate_latency = float(np.mean([result.runtime["total_ms_per_frame"] for result in candidate]))
+
+    def inference_memory(result: VariantResult) -> float:
+        return result.runtime["peak_end_to_end_memory_gb"]
+
+    final_memory = float(np.mean([inference_memory(result) for result in final]))
+    candidate_memory = float(np.mean([inference_memory(result) for result in candidate]))
+    conditions = {
+        "primary_macro_absrel_strictly_better": candidate_primary < final_primary,
+        "no_sequence_regression_above_5pct": sequence_condition,
+        "latency_at_most_1p10x_final": candidate_latency <= 1.10 * final_latency,
+        "peak_inference_memory_at_most_1p10x_final": candidate_memory <= 1.10 * final_memory,
+        "all_results_finite_valid_and_checkpointed": results_integrity_valid,
+        "zero_failures": not failures,
+    }
+    promoted = all(conditions.values())
+    return {
+        "schema_version": "jepa4d-phase2c-promotion-v1",
+        "decision": "promote_learned_fusion" if promoted else "retain_final_layer",
+        "promoted": promoted,
+        "conditions": conditions,
+        "primary": {
+            "final_macro_absrel": final_primary,
+            "candidate_macro_absrel": candidate_primary,
+            "relative_change": (candidate_primary - final_primary) / max(final_primary, 1e-12),
+        },
+        "per_sequence": per_sequence,
+        "latency": {
+            "final_ms_per_frame": final_latency,
+            "candidate_ms_per_frame": candidate_latency,
+            "ratio": candidate_latency / max(final_latency, 1e-12),
+        },
+        "peak_inference_memory": {
+            "final_gib": final_memory,
+            "candidate_gib": candidate_memory,
+            "ratio": candidate_memory / max(final_memory, 1e-12),
+        },
+    }
+
+
 def _artifact_manifest(output: Path) -> dict[str, dict[str, Any]]:
     # The manifest cannot hash itself, and the backend artifact receipt only
     # exists after the immutable directory snapshot has uploaded successfully.
@@ -720,17 +1142,19 @@ def _artifact_manifest(output: Path) -> dict[str, dict[str, Any]]:
     }
 
 
-def _upload_wandb_artifact(run: Any, output: Path, status: str) -> dict[str, Any]:
+def _upload_wandb_artifact(run: Any, output: Path, status: str, *, phase: str = "phase2b") -> dict[str, Any]:
     """Upload the final immutable snapshot and persist the backend receipt."""
     import wandb
 
     suffix = "comparison" if status == "success" else "failed-comparison"
-    artifact = wandb.Artifact(f"{run.id}-phase2b-{suffix}", type="geometry-comparison")
-    artifact.add_dir(str(output), name="phase2b")
+    if phase not in {"phase2b", "phase2c"}:
+        raise ValueError(f"unsupported artifact phase: {phase}")
+    artifact = wandb.Artifact(f"{run.id}-{phase}-{suffix}", type="geometry-comparison")
+    artifact.add_dir(str(output), name=phase)
     logged_artifact = run.log_artifact(artifact)
     logged_artifact.wait(timeout=900)
     receipt = {
-        "schema_version": "jepa4d-phase2b-wandb-artifact-v1",
+        "schema_version": f"jepa4d-{phase}-wandb-artifact-v1",
         "status": status,
         "mode": "online",
         "run_id": run.id,
@@ -762,6 +1186,8 @@ def _validate_complete_results(results: list[VariantResult], failures: list[dict
         "vjepa_final": {0, 1, 2},
         "vjepa_multilayer": {0, 1, 2},
     }
+    if any(result.variant_id == "vjepa_learned_fusion" for result in results):
+        expected["vjepa_learned_fusion"] = {0, 1, 2}
     actual: dict[str, set[int | None]] = defaultdict(set)
     for result in results:
         if result.seed in actual[result.variant_id]:
@@ -776,8 +1202,53 @@ def _validate_complete_results(results: list[VariantResult], failures: list[dict
             checkpoint = Path(result.checkpoint)
             if not checkpoint.is_file() or _sha256(checkpoint) != result.checkpoint_sha256:
                 raise RuntimeError(f"checkpoint hash mismatch for {result.variant_id} seed {result.seed}")
+            if result.model_metadata.get("checkpoint_reload") != "strict-prediction-equality-pass":
+                raise RuntimeError(f"checkpoint reload is unverified for {result.variant_id} seed {result.seed}")
     if dict(actual) != expected:
         raise RuntimeError(f"incomplete result set: expected={expected}, actual={dict(actual)}")
+    if "vjepa_learned_fusion" in expected:
+        expected_sequences = {
+            "freiburg3_long_office_household",
+            "freiburg3_structure_texture_far",
+        }
+        for result in results:
+            if set(result.sequence_metrics) != expected_sequences:
+                raise RuntimeError(
+                    f"{result.variant_id} seed {result.seed} has unexpected test sequences: "
+                    f"{sorted(result.sequence_metrics)}"
+                )
+            per_sequence_absrel = [
+                float(result.sequence_metrics[sequence]["metric_abs_rel"]) for sequence in sorted(expected_sequences)
+            ]
+            if not all(
+                np.isfinite(float(value))
+                for sequence_metrics in result.sequence_metrics.values()
+                for value in sequence_metrics.values()
+            ):
+                raise RuntimeError(f"non-finite per-sequence metrics for {result.variant_id} seed {result.seed}")
+            expected_macro = float(np.mean(per_sequence_absrel))
+            if not math.isclose(result.metrics["metric_abs_rel"], expected_macro, rel_tol=0.0, abs_tol=1e-10):
+                raise RuntimeError(
+                    f"primary metric is not a sequence macro for {result.variant_id} seed {result.seed}"
+                )
+    by_variant_seed = {(result.variant_id, result.seed): result for result in results}
+    for seed in (0, 1, 2):
+        candidate = by_variant_seed.get(("vjepa_learned_fusion", seed))
+        if candidate is None:
+            continue
+        reference = by_variant_seed[("vjepa_final", seed)]
+        if candidate.trainable_parameters is None or reference.trainable_parameters is None:
+            raise RuntimeError("learned fusion parameter counts are missing")
+        if candidate.trainable_parameters != reference.trainable_parameters + 3:
+            raise RuntimeError(f"learned fusion seed {seed} does not add exactly three trainable parameters")
+        if candidate.model_metadata.get("probe_initial_sha256") != reference.model_metadata.get(
+            "probe_initial_sha256"
+        ):
+            raise RuntimeError(f"learned fusion seed {seed} did not share the final probe initialization")
+        state = candidate.model_metadata.get("fusion_state", {})
+        coefficients = [float(state.get(f"coefficient_layer_{layer}", float("nan"))) for layer in (2, 5, 8)]
+        if not all(np.isfinite(value) and abs(value) <= 1 / 3 + 1e-7 for value in coefficients):
+            raise RuntimeError(f"learned fusion seed {seed} has invalid coefficients: {coefficients}")
     if failures:
         raise RuntimeError(f"Phase 2b recorded {len(failures)} seed failures")
 
@@ -785,7 +1256,7 @@ def _validate_complete_results(results: list[VariantResult], failures: list[dict
 @app.command()
 def main(
     dataset_root: Annotated[Path, typer.Option("--dataset-root")],
-    archive: Annotated[Path, typer.Option("--archive")],
+    archive: Annotated[Path | None, typer.Option("--archive")] = None,
     output: Annotated[Path, typer.Option("--output", "-o")] = Path("outputs/jepa4d_phase2b/tum_rgbd_v1"),
     manifest_path: Annotated[Path, typer.Option("--manifest")] = Path(
         "jepa4d/config/benchmarks/manifests/tum_rgbd_phase2b_v1.yaml"
@@ -803,6 +1274,7 @@ def main(
     wandb_project: Annotated[str, typer.Option("--wandb-project")] = "jepa4d-worldmodel",
     wandb_entity: Annotated[str | None, typer.Option("--wandb-entity")] = None,
     run_name: Annotated[str, typer.Option("--run-name")] = "phase2b-jepa-geometry-distillation-v1",
+    authorization: Annotated[Path | None, typer.Option("--authorization")] = None,
 ) -> None:
     if not device.startswith("cuda") or not torch.cuda.is_available():
         raise typer.BadParameter("Phase 2b training requires CUDA")
@@ -817,31 +1289,61 @@ def main(
     run_finished = False
     artifact_receipt: dict[str, Any] | None = None
     try:
-        manifest = validate_archive(archive, manifest_path)
-        split_names = ("train", "validation", "test")
-        split_indices = {name: [int(value) for value in manifest[f"{name}_indices"]] for name in split_names}
-        for name, indices in split_indices.items():
-            if len(indices) != len(set(indices)) or indices != sorted(indices):
-                raise ValueError(f"{name} indices must be unique and chronological")
-        if any(
-            set(split_indices[first]) & set(split_indices[second])
-            for first in split_names
-            for second in split_names
-            if first < second
-        ):
-            raise ValueError("train, validation, and test indices must be disjoint")
-        split_hash = hashlib.sha256(
-            json.dumps(
-                {key: manifest[key] for key in ("train_indices", "validation_indices", "test_indices")},
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
-        splits = {name: load_tum_indices(dataset_root, split_indices[name]) for name in split_names}
-        if {name: len(values) for name, values in splits.items()} != {"train": 64, "validation": 16, "test": 8}:
-            raise ValueError("formal split must contain exactly 64/16/8 frames")
+        raw_manifest = yaml.safe_load(manifest_path.read_text())
+        cross_sequence = raw_manifest.get("schema_version") == "jepa4d-tum-cross-sequence-v1"
+        if cross_sequence:
+            if archive is not None:
+                raise ValueError("cross-sequence mode derives all archives from the bundle manifest; omit --archive")
+            if authorization is None or not authorization.is_file():
+                raise ValueError("formal Phase 2c requires a passing --authorization receipt")
+            authorization_record = json.loads(authorization.read_text())
+            if (
+                authorization_record.get("schema_version") != "jepa4d-phase2c-authorization-v1"
+                or authorization_record.get("status") != "pass"
+            ):
+                raise ValueError("Phase 2c authorization receipt does not pass")
+            bundle = load_cross_sequence_bundle(dataset_root, manifest_path)
+            if authorization_record.get("split_hash") != bundle.split_hash:
+                raise ValueError("Phase 2c authorization is bound to a different split")
+            _write_json(output / "formal_authorization.json", authorization_record)
+            manifest = bundle.manifest
+            splits = bundle.splits
+            split_hash = bundle.split_hash
+            dataset_record = bundle.fingerprint
+        else:
+            if authorization is not None:
+                raise ValueError("legacy Phase 2b mode does not accept --authorization")
+            if archive is None:
+                raise ValueError("legacy Phase 2b mode requires --archive")
+            manifest = validate_archive(archive, manifest_path)
+            split_names = ("train", "validation", "test")
+            split_indices = {name: [int(value) for value in manifest[f"{name}_indices"]] for name in split_names}
+            for name, indices in split_indices.items():
+                if len(indices) != len(set(indices)) or indices != sorted(indices):
+                    raise ValueError(f"{name} indices must be unique and chronological")
+            if any(
+                set(split_indices[first]) & set(split_indices[second])
+                for first in split_names
+                for second in split_names
+                if first < second
+            ):
+                raise ValueError("train, validation, and test indices must be disjoint")
+            split_hash = hashlib.sha256(
+                json.dumps(
+                    {key: manifest[key] for key in ("train_indices", "validation_indices", "test_indices")},
+                    sort_keys=True,
+                ).encode()
+            ).hexdigest()
+            splits = {name: load_tum_indices(dataset_root, split_indices[name]) for name in split_names}
+            if {name: len(values) for name, values in splits.items()} != {
+                "train": 64,
+                "validation": 16,
+                "test": 8,
+            }:
+                raise ValueError("formal split must contain exactly 64/16/8 frames")
+            dataset_record = _dataset_fingerprint(dataset_root, splits, archive)
 
         _log_event(output, "validating_dataset_extraction")
-        dataset_record = _dataset_fingerprint(dataset_root, splits, archive)
         _write_json(output / "dataset_fingerprint.json", dataset_record)
         _log_event(output, "validating_model_assets")
         asset_record = _checkpoint_manifest(
@@ -860,9 +1362,16 @@ def main(
         (output / "pip-freeze.txt").write_text(_command([sys.executable, "-m", "pip", "freeze"]) + "\n")
         resolved_config = {
             "dataset_root": str(dataset_root.resolve()),
-            "archive": str(archive.resolve()),
+            "archive": None if archive is None else str(archive.resolve()),
             "manifest": str(manifest_path.resolve()),
             "split_hash": split_hash,
+            "protocol": "phase2c-cross-sequence-v1" if cross_sequence else "phase2b-single-sequence-v1",
+            "split_counts": {name: len(values) for name, values in splits.items()},
+            "authorization": (
+                None
+                if authorization is None
+                else {"path": str(authorization.resolve()), "sha256": _sha256(authorization)}
+            ),
             "output": str(output.resolve()),
             "vjepa_checkpoint": str(vjepa_checkpoint.resolve()),
             "vjepa_implementation": str(vjepa_implementation.resolve()),
@@ -884,7 +1393,20 @@ def main(
             ),
             "teacher_scale_policy": "one global scale fitted on training pixels and frozen before validation/test",
             "multilayer_policy": (
-                "train-standardize each of layers 2/5/8/11, then average; parameter-matched to final layer"
+                "train-standardize final and layers 2/5/8, then average; parameter-matched to final layer"
+                if cross_sequence
+                else "train-standardize each of layers 2/5/8/11, then average; parameter-matched to final layer"
+            ),
+            "learned_fusion_policy": (
+                "F + sum(tanh(g_l)/3*(I_l-F)) for l=2/5/8; three zero-initialized scalar gates"
+                if cross_sequence
+                else None
+            ),
+            "runtime_profile": (
+                "co-resident batch-1 encoder->train-frozen normalization->fusion/probe; preloaded RGBInputBatch; "
+                "30 warmups; median of 3x30 measured iterations per seed"
+                if cross_sequence
+                else "isolated encoder throughput plus isolated batch-1 head latency"
             ),
             "wandb": {"enabled": wandb_enabled, "project": wandb_project, "entity": wandb_entity, "mode": "online"},
         }
@@ -897,9 +1419,17 @@ def main(
                 project=wandb_project,
                 entity=wandb_entity,
                 name=run_name,
-                job_type="phase2b-training",
+                job_type="phase2c-cross-sequence-training" if cross_sequence else "phase2b-training",
                 mode="online",
-                tags=["phase-2b", "geometry-distillation", "TUM-RGBD", "vjepa", "baselines", "cuda"],
+                tags=[
+                    "phase-2c" if cross_sequence else "phase-2b",
+                    "cross-sequence" if cross_sequence else "single-sequence",
+                    "geometry-distillation",
+                    "TUM-RGBD",
+                    "vjepa",
+                    "baselines",
+                    "cuda",
+                ],
                 config={
                     **resolved_config,
                     "manifest_id": manifest["dataset_id"],
@@ -917,6 +1447,7 @@ def main(
             implementation_path=vjepa_implementation,
             backend="hf_compat",
             device=device,
+            capture_layers=(2, 5, 8) if cross_sequence else None,
         )
         vjepa_load_seconds = time.perf_counter() - load_started
         vjepa_parameters = (
@@ -955,6 +1486,31 @@ def main(
         _release_cuda()
         _log_event(output, "vjepa_released")
 
+        vjepa_final_runtime = vjepa_runtime["test"]
+        if cross_sequence:
+            _log_event(output, "vjepa_final_only_profiling", frames=len(splits["test"]))
+            load_started = time.perf_counter()
+            final_only_extractor = VJEPA21FeatureExtractor(
+                checkpoint=vjepa_checkpoint,
+                implementation_path=vjepa_implementation,
+                backend="hf_compat",
+                device=device,
+                capture_layers=(),
+            )
+            final_only_load_seconds = time.perf_counter() - load_started
+            _, vjepa_final_runtime = _extract_vjepa(final_only_extractor, splits["test"], chunk_size=8)
+            vjepa_final_runtime.update(
+                {"model_load_seconds": final_only_load_seconds, "parameters": float(vjepa_parameters)}
+            )
+            del final_only_extractor
+            _release_cuda()
+            _log_event(
+                output,
+                "vjepa_final_only_profiled",
+                per_frame_ms=vjepa_final_runtime["per_frame_ms"],
+                peak_memory_gb=vjepa_final_runtime["peak_memory_gb"],
+            )
+
         _log_event(output, "vggt_loading")
         load_started = time.perf_counter()
         teacher = GeometryBeliefHead(
@@ -980,7 +1536,13 @@ def main(
             align_corners=False,
         )[:, 0]
         teacher_test_metric = teacher_raw_518["test"] * teacher_scale
-        teacher_metrics = _evaluate_depths(teacher_test_metric, targets_518["test"])
+        teacher_sequence_metrics: dict[str, dict[str, float]] = {}
+        if cross_sequence:
+            teacher_metrics, teacher_sequence_metrics = _evaluate_sequence_macro(
+                teacher_test_metric, targets_518["test"], splits["test"]
+            )
+        else:
+            teacher_metrics = _evaluate_depths(teacher_test_metric, targets_518["test"])
         teacher_metrics["training_fitted_metric_scale"] = teacher_scale
         teacher_result = VariantResult(
             variant_id="vggt_teacher",
@@ -1004,17 +1566,24 @@ def main(
                 "Official VGGT-1B BF16 teacher evaluated at native 518px.",
                 "One metric scale was fitted only on training pixels and frozen for test; aligned_* remains per-frame scale aligned.",
             ],
+            sequence_metrics=teacher_sequence_metrics,
         )
         diagnostics_dir = output / "diagnostics"
         diagnostics_dir.mkdir(parents=True, exist_ok=True)
         teacher_diagnostics_path = diagnostics_dir / "vggt_teacher.npz"
-        np.savez_compressed(
-            teacher_diagnostics_path,
-            prediction_m=teacher_test_metric.numpy(),
-            target_m=targets_518["test"].numpy(),
-            relative_prediction=teacher_raw_518["test"].numpy(),
-            fitted_scale=np.asarray(teacher_scale),
-        )
+        teacher_diagnostic_tensors = {
+            "prediction_m": teacher_test_metric,
+            "target_m": targets_518["test"],
+            "relative_prediction": teacher_raw_518["test"],
+        }
+        if cross_sequence:
+            teacher_persisted = _compact_prediction_diagnostics(
+                teacher_diagnostic_tensors, splits["test"], splits["validation"], 0
+            )
+        else:
+            teacher_persisted = {key: value.numpy() for key, value in teacher_diagnostic_tensors.items()}
+        teacher_persisted["fitted_scale"] = np.asarray(teacher_scale)
+        np.savez_compressed(teacher_diagnostics_path, **teacher_persisted)
         per_frame_metrics = _per_frame_rows(
             "vggt_teacher", None, teacher_test_metric, targets_518["test"], splits["test"]
         )
@@ -1050,33 +1619,51 @@ def main(
         torch.save(rgb_normalized[3], rgb_normalization_path)
         normalization_hashes[str(rgb_normalization_path.relative_to(output))] = _sha256(rgb_normalization_path)
 
-        final_normalized = _normalize(
-            vjepa_features["train"]["vjepa_final"],
-            vjepa_features["validation"]["vjepa_final"],
-            vjepa_features["test"]["vjepa_final"],
-        )
-        variant_features["vjepa_final"] = {
-            "train": final_normalized[0],
-            "validation": final_normalized[1],
-            "test": final_normalized[2],
-        }
-        final_normalization_path = output / "vjepa_final-normalization.pt"
-        torch.save(final_normalized[3], final_normalization_path)
-        normalization_hashes[str(final_normalization_path.relative_to(output))] = _sha256(final_normalization_path)
+        if cross_sequence:
+            normalized_variants, shared_statistics = _normalize_phase2c_layers(
+                vjepa_features["train"], vjepa_features["validation"], vjepa_features["test"]
+            )
+            for variant, normalized in normalized_variants.items():
+                variant_features[variant] = {
+                    "train": normalized[0],
+                    "validation": normalized[1],
+                    "test": normalized[2],
+                }
+                normalization_path = output / f"{variant}-normalization.pt"
+                if variant == "vjepa_final":
+                    statistics_to_save: dict[str, Any] = {"vjepa_final": shared_statistics["vjepa_final"]}
+                else:
+                    statistics_to_save = shared_statistics
+                torch.save(statistics_to_save, normalization_path)
+                normalization_hashes[str(normalization_path.relative_to(output))] = _sha256(normalization_path)
+        else:
+            final_normalized = _normalize(
+                vjepa_features["train"]["vjepa_final"],
+                vjepa_features["validation"]["vjepa_final"],
+                vjepa_features["test"]["vjepa_final"],
+            )
+            variant_features["vjepa_final"] = {
+                "train": final_normalized[0],
+                "validation": final_normalized[1],
+                "test": final_normalized[2],
+            }
+            final_normalization_path = output / "vjepa_final-normalization.pt"
+            torch.save(final_normalized[3], final_normalization_path)
+            normalization_hashes[str(final_normalization_path.relative_to(output))] = _sha256(final_normalization_path)
 
-        multilayer_normalized = _normalize_multilayer(
-            vjepa_features["train"], vjepa_features["validation"], vjepa_features["test"]
-        )
-        variant_features["vjepa_multilayer"] = {
-            "train": multilayer_normalized[0],
-            "validation": multilayer_normalized[1],
-            "test": multilayer_normalized[2],
-        }
-        multilayer_normalization_path = output / "vjepa_multilayer-normalization.pt"
-        torch.save(multilayer_normalized[3], multilayer_normalization_path)
-        normalization_hashes[str(multilayer_normalization_path.relative_to(output))] = _sha256(
-            multilayer_normalization_path
-        )
+            multilayer_normalized = _normalize_multilayer(
+                vjepa_features["train"], vjepa_features["validation"], vjepa_features["test"]
+            )
+            variant_features["vjepa_multilayer"] = {
+                "train": multilayer_normalized[0],
+                "validation": multilayer_normalized[1],
+                "test": multilayer_normalized[2],
+            }
+            multilayer_normalization_path = output / "vjepa_multilayer-normalization.pt"
+            torch.save(multilayer_normalized[3], multilayer_normalization_path)
+            normalization_hashes[str(multilayer_normalization_path.relative_to(output))] = _sha256(
+                multilayer_normalization_path
+            )
         del vjepa_features, rgb_features
         gc.collect()
 
@@ -1088,7 +1675,12 @@ def main(
             for seed in (0, 1, 2):
                 _log_event(output, "seed_start", variant=variant, seed=seed)
                 try:
-                    runtime = rgb_runtime_by_split["test"] if variant == "rgb_probe" else vjepa_runtime["test"]
+                    if variant == "rgb_probe":
+                        runtime = rgb_runtime_by_split["test"]
+                    elif variant == "vjepa_final":
+                        runtime = vjepa_final_runtime
+                    else:
+                        runtime = vjepa_runtime["test"]
                     result, history, prediction_diagnostics = _train_variant(
                         variant,
                         seed,
@@ -1097,6 +1689,7 @@ def main(
                         features["test"],
                         targets_24["train"],
                         targets_24["validation"],
+                        targets_24["test"],
                         targets_518["test"],
                         teacher_train_24,
                         output,
@@ -1104,12 +1697,19 @@ def main(
                         epochs,
                         run,
                         runtime,
+                        validation_samples=splits["validation"] if cross_sequence else None,
+                        test_samples=splits["test"] if cross_sequence else None,
                     )
                     diagnostics_path = diagnostics_dir / f"{variant}-seed{seed}.npz"
-                    np.savez_compressed(
-                        diagnostics_path,
-                        **{key: value.detach().cpu().numpy() for key, value in prediction_diagnostics.items()},
-                    )
+                    if cross_sequence:
+                        persisted_diagnostics = _compact_prediction_diagnostics(
+                            prediction_diagnostics, splits["test"], splits["validation"], seed
+                        )
+                    else:
+                        persisted_diagnostics = {
+                            key: value.detach().cpu().numpy() for key, value in prediction_diagnostics.items()
+                        }
+                    np.savez_compressed(diagnostics_path, **persisted_diagnostics)
                     diagnostics[f"{variant}-seed{seed}"] = str(diagnostics_path)
                     results.append(result)
                     histories.extend(history)
@@ -1143,7 +1743,83 @@ def main(
                 finally:
                     _release_cuda()
 
+        if cross_sequence:
+            _log_event(output, "end_to_end_profiles_start")
+            profile_extractor = VJEPA21FeatureExtractor(
+                checkpoint=vjepa_checkpoint,
+                implementation_path=vjepa_implementation,
+                backend="hf_compat",
+                device=device,
+                capture_layers=(),
+            )
+            results_by_key = {(result.variant_id, result.seed): result for result in results}
+            end_to_end_profiles: list[dict[str, Any]] = []
+            for seed in (0, 1, 2):
+                for variant in ("vjepa_final", "vjepa_learned_fusion", "vjepa_multilayer"):
+                    result = results_by_key[(variant, seed)]
+                    if result.checkpoint is None:
+                        raise RuntimeError(f"missing checkpoint before runtime profile: {variant} seed {seed}")
+                    payload = torch.load(result.checkpoint, map_location="cpu", weights_only=True)
+                    input_dim = int(payload["input_dim"])
+                    profile_model: torch.nn.Module
+                    if variant == "vjepa_learned_fusion":
+                        profile_model = ResidualFusionGeometryProbe(input_dim)
+                    else:
+                        profile_model = DenseGeometryProbe(input_dim)
+                    profile_model.load_state_dict(payload["state_dict"], strict=True)
+                    profile = _profile_vjepa_probe_end_to_end(
+                        profile_extractor,
+                        profile_model,
+                        splits["test"],
+                        variant,
+                        shared_statistics,
+                        device,
+                    )
+                    profile.update({"variant": variant, "seed": seed})
+                    end_to_end_profiles.append(profile)
+                    result.runtime["isolated_encoder_ms_per_frame"] = result.runtime["encoder_ms_per_frame"]
+                    result.runtime["isolated_head_ms_per_frame"] = result.runtime["head_ms_per_frame"]
+                    result.runtime["end_to_end_ms_per_frame"] = float(profile["median_ms_per_frame"])
+                    result.runtime["total_ms_per_frame"] = float(profile["median_ms_per_frame"])
+                    result.runtime["peak_end_to_end_memory_gb"] = float(profile["peak_end_to_end_memory_gb"])
+                    result.model_metadata["end_to_end_profile"] = profile
+                    _log_event(
+                        output,
+                        "end_to_end_profile_complete",
+                        variant=variant,
+                        seed=seed,
+                        median_ms_per_frame=profile["median_ms_per_frame"],
+                        peak_end_to_end_memory_gb=profile["peak_end_to_end_memory_gb"],
+                    )
+                    del profile_model
+                    _release_cuda()
+            _write_json(output / "end_to_end_profiles.json", end_to_end_profiles)
+            del profile_extractor
+            _release_cuda()
+
         aggregates = _aggregate(results)
+        results_integrity_valid = True
+        if cross_sequence:
+            try:
+                _validate_complete_results(results, failures)
+            except Exception as error:
+                results_integrity_valid = False
+                _log_event(
+                    output,
+                    "promotion_integrity_failed",
+                    error=f"{type(error).__name__}: {error}",
+                )
+        promotion_gate = (
+            _phase2c_promotion_gate(
+                results,
+                failures,
+                results_integrity_valid=results_integrity_valid,
+            )
+            if cross_sequence
+            else None
+        )
+        if promotion_gate is not None:
+            _write_json(output / "promotion_gate.json", promotion_gate)
         artifact_hashes = dict(normalization_hashes)
         artifact_hashes.update(
             {
@@ -1154,18 +1830,39 @@ def main(
         )
         record = ComparisonRecord(
             experiment_id=run_name,
-            schema_version="jepa4d-phase2b-comparison-v1",
+            schema_version=(
+                "jepa4d-phase2c-cross-sequence-comparison-v1" if cross_sequence else "jepa4d-phase2b-comparison-v1"
+            ),
             dataset_manifest=str(manifest_path),
             split_hash=split_hash,
             metric_policy={
-                "primary": "metric_abs_rel on target-defined valid pixels of chronological held-out test frames",
-                "secondary": "per-frame median-aligned depth, validation-fitted uncertainty NLL, latency, and peak GPU memory",
+                "primary": (
+                    "equal-weight macro mean of per-sequence metric_abs_rel on two held-out Freiburg-3 sequences"
+                    if cross_sequence
+                    else "metric_abs_rel on target-defined valid pixels of chronological held-out test frames"
+                ),
+                "secondary": (
+                    "per-frame median-aligned depth, equal-weight per-test-sequence validation-fitted uncertainty NLL, "
+                    "co-resident batch-1 latency, and peak GPU memory"
+                    if cross_sequence
+                    else "per-frame median-aligned depth, validation-fitted uncertainty NLL, latency, and peak GPU memory"
+                ),
                 "checkpoint_selection": "minimum validation metric_abs_rel",
                 "teacher_scale": "one global scale fitted only on training pixels and frozen before test",
                 "preprocessing": resolved_config["preprocessing"],
                 "seeds": [0, 1, 2],
                 "teacher_auxiliary_weight": 0.25,
                 "multilayer_fusion": resolved_config["multilayer_policy"],
+                "learned_fusion": resolved_config["learned_fusion_policy"],
+                "sequence_split": (
+                    "train Freiburg-1; validation Freiburg-2; test Freiburg-3" if cross_sequence else None
+                ),
+                "promotion_rule": (
+                    "candidate primary strictly better; <=5% regression on each test sequence; "
+                    "<=1.10x final latency/memory; finite validated results/checkpoints; zero failures"
+                    if cross_sequence
+                    else None
+                ),
             },
             variants=results,
             failures=failures,
@@ -1177,9 +1874,21 @@ def main(
         comparison_path = output / "comparison.json"
         failures_path = output / "failures.json"
         per_frame_path = output / "per_frame_metrics.json"
+        per_sequence_path = output / "per_sequence_metrics.json"
+        per_sequence_metrics = [
+            {
+                "variant": result.variant_id,
+                "seed": result.seed,
+                "sequence_id": sequence_id,
+                **metrics,
+            }
+            for result in results
+            for sequence_id, metrics in result.sequence_metrics.items()
+        ]
         _write_json(comparison_path, record.to_serializable())
         _write_json(failures_path, failures)
         _write_json(per_frame_path, per_frame_metrics)
+        _write_json(per_sequence_path, per_sequence_metrics)
         diagnostics["per_frame_metrics"] = str(per_frame_path)
 
         from jepa4d.visualization.geometry_student_report import write_phase2b_report
@@ -1189,6 +1898,7 @@ def main(
             comparison=record.to_serializable(),
             histories=histories,
             diagnostics=diagnostics,
+            promotion_gate=promotion_gate,
         )
 
         completion_error: str | None = None
@@ -1202,6 +1912,7 @@ def main(
             "result_rows": len(results),
             "probe_checkpoints": len(list((output / "checkpoints").glob("*.pt"))),
             "seed_failures": len(failures),
+            "promotion_decision": None if promotion_gate is None else promotion_gate["decision"],
         }
         _write_json(output / "completion_gate.json", completion)
         _log_event(output, "completion_gate", **completion)
@@ -1210,7 +1921,11 @@ def main(
 
         postflight_command = [
             sys.executable,
-            str(Path(__file__).resolve().parents[1] / "slurm" / "validate_phase2b_output.py"),
+            str(
+                Path(__file__).resolve().parents[1]
+                / "slurm"
+                / ("validate_phase2c_output.py" if cross_sequence else "validate_phase2b_output.py")
+            ),
             "--output",
             str(output),
         ]
@@ -1246,20 +1961,27 @@ def main(
                     "metric_abs_rel",
                     "aligned_abs_rel",
                     "aligned_rmse_m",
+                    "abs_log_scale_error",
                     "calibrated_nll",
-                    "encoder_ms",
-                    "head_ms",
-                    "total_ms",
+                    "isolated_encoder_ms",
+                    "isolated_head_ms",
+                    "end_to_end_ms",
                     "encoder_peak_gb",
                     "head_peak_gb",
+                    "end_to_end_peak_gb",
                     "training_peak_gb",
                     "trainable_parameters",
                     "encoder_parameters",
                     "total_parameters",
+                    "final_coefficient",
+                    "coefficient_layer_2",
+                    "coefficient_layer_5",
+                    "coefficient_layer_8",
                 ]
             )
             learned_table = wandb.Table(columns=["variant_seed", "total_ms", "metric_abs_rel", "peak_memory_gb"])
             for variant_result in results:
+                fusion_state = variant_result.model_metadata.get("fusion_state", {})
                 results_table.add_data(
                     variant_result.variant_id,
                     variant_result.role,
@@ -1267,24 +1989,33 @@ def main(
                     variant_result.metrics.get("metric_abs_rel"),
                     variant_result.metrics.get("aligned_abs_rel"),
                     variant_result.metrics.get("aligned_rmse_m"),
+                    variant_result.metrics.get("metric_abs_log_scale_error"),
                     variant_result.metrics.get("calibrated_log_depth_nll"),
                     variant_result.runtime["encoder_ms_per_frame"],
                     variant_result.runtime["head_ms_per_frame"],
                     variant_result.runtime["total_ms_per_frame"],
                     variant_result.runtime["peak_encoder_memory_gb"],
                     variant_result.runtime["peak_head_memory_gb"],
+                    variant_result.runtime.get("peak_end_to_end_memory_gb"),
                     variant_result.runtime.get("peak_training_memory_gb"),
                     variant_result.trainable_parameters,
                     variant_result.encoder_parameters,
                     variant_result.parameters,
+                    fusion_state.get("final_coefficient"),
+                    fusion_state.get("coefficient_layer_2"),
+                    fusion_state.get("coefficient_layer_5"),
+                    fusion_state.get("coefficient_layer_8"),
                 )
                 learned_table.add_data(
                     f"{variant_result.variant_id}-seed{variant_result.seed}",
                     variant_result.runtime["total_ms_per_frame"],
                     variant_result.metrics.get("metric_abs_rel"),
-                    max(
-                        variant_result.runtime["peak_encoder_memory_gb"],
-                        variant_result.runtime["peak_head_memory_gb"],
+                    variant_result.runtime.get(
+                        "peak_end_to_end_memory_gb",
+                        max(
+                            variant_result.runtime["peak_encoder_memory_gb"],
+                            variant_result.runtime["peak_head_memory_gb"],
+                        ),
                     ),
                 )
             history_columns = [
@@ -1298,6 +2029,15 @@ def main(
                 "gradient",
                 "distillation",
                 "gradient_norm",
+                "probe_gradient_norm",
+                "gate_gradient_norm",
+                "raw_gate_layer_2",
+                "raw_gate_layer_5",
+                "raw_gate_layer_8",
+                "final_coefficient",
+                "coefficient_layer_2",
+                "coefficient_layer_5",
+                "coefficient_layer_8",
                 "learning_rate",
                 "best_validation_metric_abs_rel",
                 "epoch_seconds",
@@ -1312,26 +2052,54 @@ def main(
                 "variant",
                 "seed",
                 "frame_id",
+                "sequence_id",
                 "timestamp",
                 "metric_abs_rel",
                 "metric_rmse_m",
                 "aligned_abs_rel",
                 "aligned_rmse_m",
                 "alignment_scale",
+                "metric_abs_log_scale_error",
                 "valid_target_fraction",
             ]
             frame_table = wandb.Table(
                 columns=frame_columns,
                 data=[[row.get(column) for column in frame_columns] for row in per_frame_metrics],
             )
+            sequence_columns = [
+                "variant",
+                "seed",
+                "sequence_id",
+                "metric_abs_rel",
+                "metric_rmse_m",
+                "metric_delta_1",
+                "aligned_abs_rel",
+                "aligned_rmse_m",
+                "metric_abs_log_scale_error",
+                "raw_log_depth_nll",
+                "calibrated_log_depth_nll",
+            ]
+            sequence_table = wandb.Table(
+                columns=sequence_columns,
+                data=[[row.get(column) for column in sequence_columns] for row in per_sequence_metrics],
+            )
             diagnostic_media: dict[str, Any] = {}
             for label, path_value in diagnostics.items():
                 if label == "per_frame_metrics" or (label != "vggt_teacher" and not label.endswith("seed0")):
                     continue
                 with np.load(path_value) as values:
-                    prediction = values["prediction_m"][0]
-                    target = values["target_m"][0]
-                    relative_error = np.abs(prediction - target) / np.maximum(target, 1e-6)
+                    predictions = values["prediction_m"]
+                    targets = values["target_m"]
+                    sample_ids = (
+                        values["test_sample_ids"].tolist()
+                        if "test_sample_ids" in values.files
+                        else [f"frame-{index}" for index in range(len(predictions))]
+                    )
+                    selection_labels = (
+                        values["test_selection_labels"].tolist()
+                        if "test_selection_labels" in values.files
+                        else ["legacy-diagnostic-frame" for _ in range(len(predictions))]
+                    )
                     validation_prediction = (
                         values["validation_prediction_24_m"] if "validation_prediction_24_m" in values.files else None
                     )
@@ -1341,15 +2109,21 @@ def main(
                     validation_logvar = (
                         values["validation_log_variance_24"] if "validation_log_variance_24" in values.files else None
                     )
-                diagnostic_media[f"diagnostics/{label}/prediction"] = wandb.Image(
-                    prediction, caption=f"{label}: held-out frame 0 prediction (m)"
-                )
-                diagnostic_media[f"diagnostics/{label}/target"] = wandb.Image(
-                    target, caption=f"{label}: held-out frame 0 target (m)"
-                )
-                diagnostic_media[f"diagnostics/{label}/relative_error"] = wandb.Image(
-                    np.clip(relative_error, 0, 1), caption=f"{label}: held-out frame 0 clipped relative error"
-                )
+                for panel_index, (prediction, target, sample_id, selection_label) in enumerate(
+                    zip(predictions[:4], targets[:4], sample_ids[:4], selection_labels[:4], strict=True)
+                ):
+                    relative_error = np.abs(prediction - target) / np.maximum(target, 1e-6)
+                    prefix = f"diagnostics/{label}/test_{panel_index}"
+                    diagnostic_media[f"{prefix}/prediction"] = wandb.Image(
+                        prediction, caption=f"{label}: {sample_id} prediction (m); {selection_label}"
+                    )
+                    diagnostic_media[f"{prefix}/target"] = wandb.Image(
+                        target, caption=f"{label}: {sample_id} target (m); {selection_label}"
+                    )
+                    diagnostic_media[f"{prefix}/relative_error"] = wandb.Image(
+                        np.clip(relative_error, 0, 1),
+                        caption=f"{label}: {sample_id} clipped relative error; {selection_label}",
+                    )
                 if (
                     validation_prediction is not None
                     and validation_target is not None
@@ -1373,6 +2147,7 @@ def main(
                     "comparison/results": results_table,
                     "comparison/training_history": history_table,
                     "comparison/per_frame_metrics": frame_table,
+                    "comparison/per_sequence_metrics": sequence_table,
                     "comparison/accuracy_latency": wandb.plot.scatter(
                         learned_table, "total_ms", "metric_abs_rel", title="Accuracy–latency trade-off"
                     ),
@@ -1383,7 +2158,27 @@ def main(
             )
             for variant, values in aggregates.items():
                 run.summary.update({f"comparison/{variant}/{key}": value for key, value in values.items()})
-            artifact_receipt = _upload_wandb_artifact(run, output, str(completion["status"]))
+            if promotion_gate is not None:
+                promotion_scalars = {
+                    "promotion/promoted": int(promotion_gate["promoted"]),
+                    "promotion/final_macro_absrel": promotion_gate["primary"]["final_macro_absrel"],
+                    "promotion/candidate_macro_absrel": promotion_gate["primary"]["candidate_macro_absrel"],
+                    "promotion/primary_relative_change": promotion_gate["primary"]["relative_change"],
+                    "promotion/latency_ratio": promotion_gate["latency"]["ratio"],
+                    "promotion/peak_inference_memory_ratio": promotion_gate["peak_inference_memory"]["ratio"],
+                    **{
+                        f"promotion/condition/{name}": int(value)
+                        for name, value in promotion_gate["conditions"].items()
+                    },
+                }
+                run.log(promotion_scalars)
+                run.summary.update({"promotion/decision": promotion_gate["decision"], **promotion_scalars})
+            artifact_receipt = _upload_wandb_artifact(
+                run,
+                output,
+                str(completion["status"]),
+                phase="phase2c" if cross_sequence else "phase2b",
+            )
             run.summary.update(
                 {
                     "result": completion["status"],
@@ -1436,7 +2231,12 @@ def main(
                 run.summary.update({"result": "failed", "failure": run_failure["error"]})
                 run.log({"failure/error": run_failure["error"]})
                 if not failure_published:
-                    artifact_receipt = _upload_wandb_artifact(run, output, "failed")
+                    artifact_receipt = _upload_wandb_artifact(
+                        run,
+                        output,
+                        "failed",
+                        phase="phase2c" if cross_sequence else "phase2b",
+                    )
                     failure_published = True
                     run.summary.update(
                         {
