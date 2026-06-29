@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sys
 import time
 from collections import Counter, defaultdict
@@ -700,8 +701,8 @@ def main() -> None:
         html = html_report.read_text(errors="replace")
         if "Plotly.newPlot" not in html:
             errors.append("geometry report does not contain interactive Plotly visualizations")
-        if "https://cdn.plot.ly" in html:
-            errors.append("geometry report depends on the Plotly CDN instead of being self-contained")
+        if re.search(r"<script\b[^>]*\bsrc\s*=", html, flags=re.IGNORECASE):
+            errors.append("geometry report loads an external script instead of being self-contained")
 
     artifact_manifest_path = root / "artifact_manifest.json"
     artifact_manifest: dict[str, Any] = _read_json(artifact_manifest_path, errors, "artifact manifest", {})

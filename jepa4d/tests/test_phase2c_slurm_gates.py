@@ -306,7 +306,10 @@ def _formal_output(root: Path) -> Path:
             "promotion_decision": "retain_final_layer",
         },
     )
-    _write(output / "geometry_student_report.html", "<html><script>Plotly.newPlot('plot', [], {});</script></html>")
+    _write(
+        output / "geometry_student_report.html",
+        ("<html><script>const topojsonURL='https://cdn.plot.ly/un/';Plotly.newPlot('plot', [], {});</script></html>"),
+    )
     _write(output / "artifact_manifest.json", _manifest(output))
     _write(
         output / "wandb_artifact_receipt.json",
@@ -387,6 +390,24 @@ def test_login_preparation_does_no_gpu_work() -> None:
 def test_phase2c_output_validator_accepts_complete_online_output(tmp_path: Path) -> None:
     result = _validate(_formal_output(tmp_path), tmp_path / "validation.json")
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_phase2c_output_validator_rejects_external_plotly_script(tmp_path: Path) -> None:
+    output = _formal_output(tmp_path)
+    _write(
+        output / "geometry_student_report.html",
+        (
+            '<html><script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
+            "<script>Plotly.newPlot('plot', [], {});</script></html>"
+        ),
+    )
+    _write(output / "artifact_manifest.json", _manifest(output))
+    receipt = json.loads((output / "wandb_artifact_receipt.json").read_text())
+    receipt["artifact_manifest_sha256"] = _sha256(output / "artifact_manifest.json")
+    _write(output / "wandb_artifact_receipt.json", receipt)
+    result = _validate(output, tmp_path / "validation.json")
+    assert result.returncode != 0
+    assert "loads an external script" in result.stdout
 
 
 def test_phase2c_output_validator_rejects_missing_sequence_evidence(tmp_path: Path) -> None:
