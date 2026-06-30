@@ -79,8 +79,7 @@ def test_sbatch_resources_are_frozen_and_every_partition_job_requests_a_gpu() ->
 def test_graph_validator_rejects_gpu_or_parent_drift() -> None:
     parents = _parent_map()
     jobs: dict[str, dict[str, Any]] = {
-        label: {"parents": values, "resources": {"gpu_requested": True}}
-        for label, values in parents.items()
+        label: {"parents": values, "resources": {"gpu_requested": True}} for label, values in parents.items()
     }
     validate_jobs(jobs)
     jobs["A"]["resources"]["gpu_requested"] = False
