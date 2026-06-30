@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -11,12 +13,21 @@ import pytest
 from scripts.write_phase2f_dependency_graph import (
     ACCOUNT,
     PARTITIONS,
+    _parse_job,
     expected_labels,
     parse_sbatch,
     validate_jobs,
 )
+from slurm import phase2f_contract
 from slurm.phase2f_asset_audit import audit_assets
-from slurm.phase2f_contract import reject_secrets
+from slurm.phase2f_contract import (
+    LOGICAL_JOB_ID_PATTERN,
+    SUBMISSION_POLICY,
+    _current_scheduler_ids,
+    load_graph,
+    reject_secrets,
+    scheduler_completed,
+)
 from slurm.phase2f_final_guard import assert_registry_clear
 from slurm.phase2f_postflight import _verify_hash_identities
 
@@ -59,6 +70,7 @@ def test_sbatch_resources_are_frozen_and_every_partition_job_requests_a_gpu() ->
         "phase2f_asset_audit.sbatch",
         "phase2f_cache.sbatch",
         "phase2f_static_audit.sbatch",
+        "phase2f_array_dispatch.sbatch",
         "phase2f_latency.sbatch",
         "phase2f_latency_aggregate.sbatch",
         "phase2f_train.sbatch",
@@ -88,15 +100,153 @@ def test_graph_validator_rejects_gpu_or_parent_drift() -> None:
         validate_jobs(jobs)
 
 
-def test_submitter_holds_every_job_writes_graph_then_releases_in_chunks() -> None:
-    source = (ROOT / "slurm" / "submit_phase2f.sh").read_text(encoding="utf-8")
+def test_submitter_uses_exact_12_held_p2f8_submissions_and_global_cap() -> None:
+    submitter = ROOT / "slurm" / "submit_phase2f.sh"
+    source = submitter.read_text(encoding="utf-8")
+    assert os.access(submitter, os.X_OK)
     assert "--hold" in source
     assert '--dependency "afterok:$dependency"' in source
+    submitted = re.findall(r'^([A-Z]+)="\$\(submit "\$name"', source, flags=re.MULTILINE)
+    assert submitted == ["T", "A", "C", "Q", "L", "LA", "P", "PG", "F", "S", "E", "Z"]
+    names = re.findall(r'^name="p2f8-([A-Z]+)-\$SHORT"$', source, flags=re.MULTILINE)
+    assert names == submitted
+    assert len(set(names)) == 12
+    assert source.count("slurm/phase2f_array_dispatch.sbatch") == 3
+    assert "--array=0-11%8" in source
+    assert "--array=0-3%4" in source
+    assert "--array=0-47%8" in source
+    assert 'L="$(submit "$name" "$Q:$A"' in source
+    assert 'LA="$(submit "$name" "$L"' in source
+    assert 'P="$(submit "$name" "$LA"' in source
+    assert 'PG="$(submit "$name" "$P"' in source
+    assert 'F="$(submit "$name" "$PG"' in source
+    assert 'S="$(submit "$name" "$F"' in source
+    assert "[[ ${#submission_ids[@]} -eq 12 ]]" in source
+    assert "[[ ${#graph_jobs[@]} -eq 73 ]]" in source
     assert "scripts/write_phase2f_dependency_graph.py" in source
-    assert "offset+=20" in source
-    assert source.index("scripts/write_phase2f_dependency_graph.py") < source.index("scontrol release")
+    assert source.index("scripts/write_phase2f_dependency_graph.py") < source.index('scontrol release "$joined"')
+    assert "offset+=20" not in source
     assert "checkpoints/datasets/DIODE/devkit" in source
     assert 'phase2f_final_guard.py" registry-clear' in source
+
+
+def test_array_dispatch_wrapper_has_exact_bounds_and_logical_mapping() -> None:
+    path = ROOT / "slurm" / "phase2f_array_dispatch.sbatch"
+    source = path.read_text(encoding="utf-8")
+    subprocess.run(("bash", "-n", str(path)), check=True)
+    assert "#SBATCH --job-name=p2f8-array" in source
+    assert "#SBATCH --output=slurm-%x-%A_%a.out" in source
+    assert 'export JEPA4D_LOGICAL_JOB_ID="${ARRAY_ID}_${TASK_ID}"' in source
+    assert "TASK_ID >= 0 && TASK_ID < 12" in source
+    assert "TASK_ID >= 0 && TASK_ID < 4" in source
+    assert "TASK_ID >= 0 && TASK_ID < 48" in source
+    assert "arm_index=$((TASK_ID / 12))" in source
+    assert "within_arm=$((TASK_ID % 12))" in source
+    assert "rotation_index=$((within_arm / 3))" in source
+    assert "seed=$((within_arm % 3))" in source
+    assert 'JEPA4D_JOB_LABEL="F-$JEPA4D_ARM-$JEPA4D_ROTATION-S$seed"' in source
+    assert 'exec bash "$ROOT/slurm/phase2f_latency.sbatch"' in source
+    assert source.count('exec bash "$ROOT/slurm/phase2f_train.sbatch"') == 2
+    assert "eval " not in source
+
+
+def test_graph_parser_accepts_numeric_and_numeric_task_ids_with_exact_policy(tmp_path: Path) -> None:
+    scalar = _parse_job(
+        "T|12345|p2f8-T-deadbeef|-|slurm/phase2f_tests.sbatch|outputs/tests.json",
+        ROOT,
+    )
+    array = _parse_job(
+        "L07|23456_7|p2f8-L07-deadbeef|Q|slurm/phase2f_latency.sbatch|outputs/latency-07.json",
+        ROOT,
+    )
+    assert scalar["job_id"] == "12345"
+    assert array["job_id"] == "23456_7"
+    assert LOGICAL_JOB_ID_PATTERN.fullmatch("12345")
+    assert LOGICAL_JOB_ID_PATTERN.fullmatch("23456_7")
+    for invalid in ("123_", "_7", "123_bad", "123_7_8", "N_TASK"):
+        assert LOGICAL_JOB_ID_PATTERN.fullmatch(invalid) is None
+        with pytest.raises(ValueError, match="invalid job specification"):
+            _parse_job(
+                f"L07|{invalid}|p2f8-L07-deadbeef|Q|slurm/phase2f_latency.sbatch|outputs/x.json",
+                ROOT,
+            )
+
+    parents = _parent_map()
+    jobs: dict[str, dict[str, Any]] = {}
+    scalar_index = 10_000
+    for label, parent_labels in parents.items():
+        if label.startswith("L") and label != "LA":
+            task_id = int(label[1:])
+            job_id = f"20000_{task_id}"
+        elif label.startswith("P") and label != "PG":
+            task_id = int(label[1:])
+            job_id = f"30000_{task_id}"
+        elif label.startswith("F-"):
+            job_id = f"40000_{len([name for name in jobs if name.startswith('F-')])}"
+        else:
+            job_id = str(scalar_index)
+            scalar_index += 1
+        jobs[label] = {"job_id": job_id, "parents": parent_labels, "resources": {"gpu_requested": True}}
+    graph = {
+        "schema_version": "jepa4d-phase2f-dependency-graph-v1",
+        "git_clean": True,
+        "submission_policy": SUBMISSION_POLICY,
+        "jobs": jobs,
+    }
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps(graph), encoding="utf-8")
+    loaded, _ = load_graph(graph_path)
+    assert len(loaded["jobs"]) == 73
+    assert loaded["submission_policy"] == {
+        "all_jobs_submitted_held": True,
+        "dependency_type": "afterok",
+        "only_root_without_dependency": "T",
+        "release_after_atomic_graph_write": True,
+        "logical_job_count": 73,
+        "scheduler_submission_count": 12,
+        "max_parallel_tasks": 8,
+        "array_task_throttle": 8,
+    }
+
+
+def test_runtime_array_identity_uses_base_and_task_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("SLURM_JOB_ID", "SLURM_ARRAY_JOB_ID", "SLURM_ARRAY_TASK_ID"):
+        monkeypatch.delenv(name, raising=False)
+    assert _current_scheduler_ids("12345") == ("12345", "12345")
+
+    monkeypatch.setenv("SLURM_JOB_ID", "98765")
+    assert _current_scheduler_ids("98765") == ("98765", "98765")
+
+    monkeypatch.setenv("SLURM_ARRAY_JOB_ID", "23456")
+    monkeypatch.setenv("SLURM_ARRAY_TASK_ID", "7")
+    assert _current_scheduler_ids("23456_7") == ("23456_7", "98765")
+    monkeypatch.delenv("SLURM_ARRAY_TASK_ID")
+    with pytest.raises(ValueError, match="array identity is incomplete"):
+        _current_scheduler_ids("23456_7")
+
+
+def test_scheduler_completion_matches_exact_array_element(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed: list[tuple[str, ...]] = []
+
+    def fake_run(argv: tuple[str, ...], **_kwargs: Any) -> Any:
+        observed.append(argv)
+        return type(
+            "Completed",
+            (),
+            {"returncode": 0, "stdout": "23456_6|COMPLETED|0:0\n23456_7|COMPLETED|0:0\n"},
+        )()
+
+    monkeypatch.setattr(phase2f_contract, "shutil_which", lambda _name: "/usr/bin/sacct")
+    monkeypatch.setattr(phase2f_contract.subprocess, "run", fake_run)
+    assert scheduler_completed("23456_7") is True
+    assert scheduler_completed("23456_8") is False
+    assert observed[0][0:5] == ("sacct", "-n", "-X", "-j", "23456_7")
+
+
+def test_postflight_batches_scheduler_state_audit() -> None:
+    source = (ROOT / "slurm" / "phase2f_postflight.py").read_text(encoding="utf-8")
+    assert "scheduler_completed_many(predecessor_ids)" in source
+    assert "scheduler_completed(str(job" not in source
 
 
 def test_pipeline_wrappers_do_not_precreate_cli_output_and_final_interface_is_exact() -> None:

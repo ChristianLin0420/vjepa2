@@ -29,6 +29,17 @@ SUCCESS_STATUSES = {
     "skipped_no_survivor",
     "no_survivor",
 }
+LOGICAL_JOB_ID_PATTERN = re.compile(r"[0-9]+(?:_[0-9]+)?")
+SUBMISSION_POLICY = {
+    "all_jobs_submitted_held": True,
+    "dependency_type": "afterok",
+    "only_root_without_dependency": "T",
+    "release_after_atomic_graph_write": True,
+    "logical_job_count": 73,
+    "scheduler_submission_count": 12,
+    "max_parallel_tasks": 8,
+    "array_task_throttle": 8,
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -87,12 +98,12 @@ def load_graph(path: Path) -> tuple[dict[str, Any], str]:
     jobs = graph.get("jobs")
     if not isinstance(jobs, dict) or len(jobs) != 73 or graph.get("git_clean") is not True:
         raise ValueError("Phase 2f dependency graph is incomplete")
-    if graph.get("submission_policy") != {
-        "all_jobs_submitted_held": True,
-        "dependency_type": "afterok",
-        "only_root_without_dependency": "T",
-        "release_after_atomic_graph_write": True,
-    }:
+    if any(
+        not isinstance(job, Mapping) or LOGICAL_JOB_ID_PATTERN.fullmatch(str(job.get("job_id", ""))) is None
+        for job in jobs.values()
+    ):
+        raise ValueError("Phase 2f graph contains an invalid logical scheduler job ID")
+    if graph.get("submission_policy") != SUBMISSION_POLICY:
         raise ValueError("Phase 2f graph submission policy drifted")
     return graph, sha256_file(path.resolve(strict=True))
 
@@ -102,7 +113,7 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _actual_partition(job_id: str) -> str:
-    if shutil_which("scontrol") and job_id.isdigit():
+    if shutil_which("scontrol") and LOGICAL_JOB_ID_PATTERN.fullmatch(job_id):
         result = subprocess.run(("scontrol", "show", "job", "-o", job_id), capture_output=True, text=True, check=False)
         match = re.search(r"(?:^|\s)Partition=(\S+)", result.stdout)
         if result.returncode == 0 and match:
@@ -119,17 +130,60 @@ def shutil_which(name: str) -> str | None:
     return None
 
 
-def scheduler_completed(job_id: str) -> bool:
-    if not shutil_which("sacct") or not job_id.isdigit():
+def scheduler_completed_many(job_ids: Sequence[str]) -> bool:
+    requested = tuple(dict.fromkeys(job_ids))
+    if not requested:
+        return True
+    if not shutil_which("sacct") or any(LOGICAL_JOB_ID_PATTERN.fullmatch(job_id) is None for job_id in requested):
         return False
     result = subprocess.run(
-        ("sacct", "-n", "-X", "-j", job_id, "--format=State,ExitCode", "--parsable2"),
+        (
+            "sacct",
+            "-n",
+            "-X",
+            "-j",
+            ",".join(requested),
+            "--format=JobID%64,State,ExitCode",
+            "--parsable2",
+        ),
         capture_output=True,
         text=True,
         check=False,
     )
     rows = [line.strip().split("|") for line in result.stdout.splitlines() if line.strip()]
-    return result.returncode == 0 and any(row[0].split("+")[0] == "COMPLETED" and row[1] == "0:0" for row in rows)
+    completed = {
+        row[0]
+        for row in rows
+        if len(row) >= 3 and row[0] in requested and row[1].split("+")[0] == "COMPLETED" and row[2] == "0:0"
+    }
+    return result.returncode == 0 and completed == set(requested)
+
+
+def scheduler_completed(job_id: str) -> bool:
+    return scheduler_completed_many((job_id,))
+
+
+def _current_scheduler_ids(registered_job_id: str) -> tuple[str, str]:
+    """Return the graph-logical ID and the allocation ID used for scheduler lookup."""
+
+    actual_job_id = os.environ.get("SLURM_JOB_ID")
+    array_job_id = os.environ.get("SLURM_ARRAY_JOB_ID")
+    array_task_id = os.environ.get("SLURM_ARRAY_TASK_ID")
+    if bool(array_job_id) != bool(array_task_id):
+        raise ValueError("Slurm array identity is incomplete")
+    if array_job_id and array_task_id:
+        if not actual_job_id:
+            raise ValueError("Slurm array task lacks SLURM_JOB_ID")
+        logical_job_id = f"{array_job_id}_{array_task_id}"
+    else:
+        logical_job_id = actual_job_id or registered_job_id
+    scheduler_lookup_id = actual_job_id or registered_job_id.partition("_")[0]
+    if (
+        LOGICAL_JOB_ID_PATTERN.fullmatch(logical_job_id) is None
+        or LOGICAL_JOB_ID_PATTERN.fullmatch(scheduler_lookup_id) is None
+    ):
+        raise ValueError("Slurm scheduler job identity is invalid")
+    return logical_job_id, scheduler_lookup_id
 
 
 def validate_wandb(receipt: Mapping[str, Any]) -> None:
@@ -160,7 +214,12 @@ def validate_test_receipt(path: Path, graph: Mapping[str, Any], graph_sha256: st
 
 
 def validate_parent_receipt(
-    *, graph: Mapping[str, Any], child_label: str, parent_label: str, path: Path
+    *,
+    graph: Mapping[str, Any],
+    child_label: str,
+    parent_label: str,
+    path: Path,
+    scheduler_status_validated: bool = False,
 ) -> dict[str, Any]:
     child = graph["jobs"][child_label]
     if parent_label not in child["parents"]:
@@ -170,7 +229,7 @@ def validate_parent_receipt(
         raise ValueError(f"parent receipt path differs for {parent_label}")
     if not Path(str(parent["expected_success"])).is_file():
         raise ValueError(f"parent {parent_label} lacks SUCCESS")
-    if not scheduler_completed(str(parent["job_id"])):
+    if not scheduler_status_validated and not scheduler_completed(str(parent["job_id"])):
         raise ValueError(f"parent {parent_label} is not scheduler COMPLETED 0:0")
     receipt = load_json(path)
     if receipt.get("status") not in SUCCESS_STATUSES:
@@ -210,7 +269,7 @@ def build_provenance(
     jobs = graph["jobs"]
     if label not in jobs:
         raise ValueError(f"job label absent from graph: {label}")
-    current_job_id = os.environ.get("SLURM_JOB_ID", str(jobs[label]["job_id"]))
+    current_job_id, scheduler_lookup_id = _current_scheduler_ids(str(jobs[label]["job_id"]))
     if str(jobs[label]["job_id"]) != current_job_id:
         raise ValueError(f"current Slurm job {current_job_id} != graph {jobs[label]['job_id']}")
     expected_parents = set(jobs[label]["parents"])
@@ -223,9 +282,16 @@ def build_provenance(
         raise ValueError("Phase 2f execution requires a clean worktree")
     test_receipt = validate_test_receipt(test_receipt_path, graph, graph_hash)
     parent_identities = []
+    parent_job_ids = [str(jobs[parent_label]["job_id"]) for parent_label in jobs[label]["parents"]]
+    if not scheduler_completed_many(parent_job_ids):
+        raise ValueError(f"parent jobs are not scheduler COMPLETED 0:0: {parent_job_ids}")
     for parent_label in jobs[label]["parents"]:
         receipt = validate_parent_receipt(
-            graph=graph, child_label=label, parent_label=parent_label, path=parents[parent_label]
+            graph=graph,
+            child_label=label,
+            parent_label=parent_label,
+            path=parents[parent_label],
+            scheduler_status_validated=True,
         )
         parent_identities.append(
             {
@@ -236,7 +302,7 @@ def build_provenance(
                 "wandb": dict(receipt["wandb"]),
             }
         )
-    actual_partition = _actual_partition(current_job_id)
+    actual_partition = _actual_partition(scheduler_lookup_id)
     if actual_partition not in ALLOWED_PARTITIONS and actual_partition != "unknown_from_fallback_environment":
         raise ValueError(f"job allocated on unregistered partition {actual_partition}")
     provenance = {

@@ -73,7 +73,7 @@ def _parse_job(value: str, root: Path) -> dict[str, Any]:
     if len(fields) != 6:
         raise ValueError("--job must be LABEL|JOB_ID|JOB_NAME|PARENTS|-relative-sbatch|receipt")
     label, job_id, job_name, parents_raw, sbatch_raw, receipt_raw = fields
-    if not re.fullmatch(r"[A-Z0-9-]+", label) or not job_id.isdigit() or not job_name:
+    if not re.fullmatch(r"[A-Z0-9-]+", label) or not re.fullmatch(r"[0-9]+(?:_[0-9]+)?", job_id) or not job_name:
         raise ValueError(f"invalid job specification: {value}")
     parents = [] if parents_raw == "-" else parents_raw.split(",")
     sbatch_path = (root / sbatch_raw).resolve(strict=True)
@@ -141,6 +141,7 @@ def discover_sources(root: Path) -> list[dict[str, Any]]:
     paths: set[Path] = set()
     patterns = (
         "docs/experiments/*phase2f*preregistered.md",
+        "docs/experiments/*phase2f*scheduler-amendment.md",
         "jepa4d/**/*phase2f*.py",
         "scripts/*phase2f*.py",
         "slurm/phase2f_*.py",
@@ -178,6 +179,10 @@ def write_graph(args: argparse.Namespace) -> dict[str, Any]:
             "release_after_atomic_graph_write": True,
             "only_root_without_dependency": "T",
             "dependency_type": "afterok",
+            "logical_job_count": 73,
+            "scheduler_submission_count": 12,
+            "max_parallel_tasks": 8,
+            "array_task_throttle": 8,
         },
         "preregistration": preregistration,
         "test_receipt": str(args.test_receipt.resolve()),

@@ -20,7 +20,7 @@ from slurm.phase2f_contract import (
     load_graph,
     load_json,
     reject_secrets,
-    scheduler_completed,
+    scheduler_completed_many,
     sha256_file,
     validate_test_receipt,
     validate_wandb,
@@ -100,12 +100,14 @@ def validate_postflight_inputs(graph_path: Path, output_root: Path) -> dict[str,
     validated: dict[str, Any] = {}
     verified_identities: set[VerifiedIdentity] = set()
     hashes_checked = _verify_hash_identities(test_receipt, test_path, verified_identities)
+    predecessor_jobs = {label: job for label, job in graph["jobs"].items() if label != "Z"}
+    predecessor_ids = [str(job["job_id"]) for job in predecessor_jobs.values()]
+    if not scheduler_completed_many(predecessor_ids):
+        raise ValueError("one or more Phase 2f predecessors are not scheduler COMPLETED 0:0")
     for label, job in graph["jobs"].items():
         if label == "Z":
             continue
         receipt_path = Path(str(job["expected_receipt"]))
-        if not scheduler_completed(str(job["job_id"])):
-            raise ValueError(f"job {label} is not scheduler COMPLETED 0:0")
         if not receipt_path.is_file() or not Path(str(job["expected_success"])).is_file():
             raise ValueError(f"job {label} lacks expected receipt/SUCCESS")
         receipt = load_json(receipt_path)
