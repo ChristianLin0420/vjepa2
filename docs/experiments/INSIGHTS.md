@@ -14,6 +14,7 @@ result changes a design decision; do not copy every scalar into it.
 | Cross-family geometry | Camera-family-blocked TUM training/validation and two held-out Freiburg-3 recordings | Learned fusion lowers final-layer macro AbsRel by 4.58% and improves both sequence means, but fixed averaging and RGB have better raw primary means. Gains mainly reduce scale error; aligned shape and uncertainty do not clearly improve. Candidate latency is 1.1655× final under the frozen profile. | Retain final by the registered gate; do not interpret three seeds as independent-scene evidence. | Fresh rotated/external camera families, scale-aware modeling, and an independently registered latency confirmation. |
 | Fusion diagnostics | Same-checkpoint interventions, target-fitted scale oracles, and 12 independent A100 latency jobs | Original and zeroed learned gates differ by only `0.000081` raw AbsRel. A per-image scalar oracle reduces raw AbsRel from `0.41801` to `0.16046`; learned/final latency is tightly `1.02262×`. Camera correction provenance remains incomplete. | Reject a learned-gate causal explanation and keep Phase 2c's final-layer decision unchanged. | Treat scale recovery as a separate estimand and complete camera provenance before causal camera claims. |
 | Factorized sensor transfer | Eight variants × three seeds on sensor-blocked SUNRGBD, with untouched kv2 final evaluation | The candidate improves raw/aligned AbsRel by `2.67%/6.22%` but worsens scale error by `13.82%`, calibrated NLL by `0.0675`, and head latency to `9.3578×`. Correct and shuffled `K` are identical because all kv2 samples share one intrinsic matrix. | Execution succeeds but promotion fails; do not continue `factorized_full_teacher` unchanged. | [Phase 2f proposal](2026-06-29-phase2f-scale-camera-proposal.md): detached scale, identifiable camera controls, latency-first screening, and a fresh final set. |
+| Detached scale/camera screen | Preregistered four-arm development protocol, 12 interleaved A100 latency allocations, and 12 M0 camera-family rotations | M1/M2/M3 pass the parameter cap but fail the frozen head-latency gate at `1.681×/3.606×/4.362×`; only M0 proceeds to training. Its development mean is `0.20208` raw AbsRel, `0.14682` aligned AbsRel, and `0.11888` scale error. No enhanced arm is eligible, so no external-final comparison is opened. | Keep M0 as the operational baseline. This is an implementation/runtime rejection, not evidence that detached scale or camera conditioning cannot improve quality. | [Optimize the candidate paths](2026-06-29-phase2f-scale-camera.md) by compiling/capturing small kernels, precomputing deterministic camera features, and fusing the scale/composition path; freeze the next latency estimand before profiling. |
 | Grounding | Real GroundingDINO integration | Teacher detections can become slots with JEPA and geometry evidence. Bootstrap association is not durable identity. | Preserve explicit evidence and verification boundaries. | SAM2 plus labeled detection/segmentation/tracking evaluation. |
 | Identity | DAVIS sequence-level ablation | V-JEPA appearance beats RGB appearance, but IoU-only remains stronger than current fusion. | Learn mask-weighted projections and motion-aware assignment; retain IoU. | Multiple sequences, occlusion strata, global assignment. |
 | Memory | Deterministic persistence lifecycle | Snapshot reload, event replay, histories, queries, and LOD agree on controlled updates. | Keep atomic records plus append-only events. | Long-duration real sequences, concurrency, and task-retention curves. |
@@ -25,12 +26,14 @@ result changes a design decision; do not copy every scalar into it.
 
 The repository now has an end-to-end, inspectable contract pipeline through representation, geometry, grounding, identity,
 persistent memory, verified planning, and benchmark aggregation. Phases 0–1 are implementation-complete at their stated
-scope. The Phase-2 VGGT teacher baseline, Phase-2b geometry student, Phase-2c cross-family gate, Phase-2d causal audit, and
-Phase-2e sensor-blocked benchmark now provide a bounded geometry evidence chain. Phase 2d showed that the learned fusion
-gates were not the cause of the observed behavior and confirmed that their true latency overhead is small. Phase 2e then
-showed that explicit factorization can improve held-out shape/raw error, but the current scale head, camera control, and
-dense-ray implementation are not promotable. Phases 3–6 have useful initial substrates and real integration evidence where
-noted, but are not model-quality or production complete.
+scope. The Phase-2 VGGT teacher baseline, Phase-2b geometry student, Phase-2c cross-family gate, Phase-2d causal audit,
+Phase-2e sensor-blocked benchmark, and Phase-2f latency-first screen now provide a bounded geometry evidence chain. Phase 2d
+showed that the learned fusion gates were not the cause of the observed behavior and confirmed that their true latency
+overhead is small. Phase 2e showed that explicit factorization can improve held-out shape/raw error, but the current scale
+head, camera control, and dense-ray implementation are not promotable. Phase 2f then rejected all three enhanced arms at
+the preregistered head-latency gate before formal training; consequently it provides no enhanced-arm quality or camera-
+causality result, and the fresh DIODE final set remains sealed. Phases 3–6 have useful initial substrates and real integration
+evidence where noted, but are not model-quality or production complete.
 
 The dominant scientific gaps are no longer interface construction. They are identifiable and efficient metric-scale/camera
 modeling, calibrated geometry/object uncertainty, identity under occlusion, long-duration memory quality, trained
@@ -40,11 +43,15 @@ recurring Xid 79 remains an infrastructure risk.
 
 Priority order:
 
-1. preregister Phase 2f with detached global scale, paired camera perturbations, component latency gates, and a fresh final set;
-2. add licensed official mini subsets for representation and the remaining stages;
-3. train or integrate real action-conditioned dynamics and evaluate repeated simulator recovery episodes;
-4. improve mask-weighted identity projection and measure long-sequence memory/calibration quality;
-5. preserve Slurm CUDA/content gates and escalate recurring Xid 79 as a platform/firmware/power/link issue.
+1. run a separately registered Phase 2g implementation-only latency salvage: precompute canonical camera features,
+   compile/capture or fuse the tiny candidate kernels, and measure both head-only and end-to-end latency without changing
+   Phase 2f's outcome;
+2. train only arms that pass that frozen runtime screen, then execute updated/stale/wrong/permuted-intrinsics controls before
+   authorizing one external-final opening;
+3. add licensed official mini subsets for representation and the remaining stages;
+4. train or integrate real action-conditioned dynamics and evaluate repeated simulator recovery episodes;
+5. improve mask-weighted identity projection and measure long-sequence memory/calibration quality;
+6. preserve Slurm CUDA/content gates, the eight-allocation cap, and escalation for recurring Xid 79 as a platform issue.
 
 ## Cross-cutting insights
 
@@ -78,6 +85,18 @@ Priority order:
     remain separate gates, with calibration fitted only on validation.
 16. A completed, postflight-clean pipeline is not a promoted model. Phase 2e execution passed while its operational model
     gate correctly failed.
+17. A latency-first screen protects experimental budget but narrows the scientific claim. Phase 2f did not train M1–M3, so
+    it rejects their current implementations, not their quality hypotheses or camera causality.
+18. The latency estimand can reverse the apparent engineering conclusion. Phase 2f's synchronized head-only ratios are
+    `1.681×/3.606×/4.362×`, while descriptive encoder-plus-head ratios are only `1.012×/1.039×/1.049×` because
+    the frozen encoder dominates. Both are useful, but only the preregistered head-only interval governs this experiment.
+19. Small-kernel overhead can dominate tiny heads. M2/M3 spend about `0.717` ms in the camera transform alone, pointing to
+    precomputation, fusion, compilation, or graph capture before another model redesign.
+20. Sensor-family variation exceeds seed variation for the M0 baseline: kv2 is strongest on raw error/NLL/AUSE, xtion is
+    dominated by scale transfer, and RealSense retains good scale but the weakest aligned shape. Family-macro reporting is
+    therefore more informative than pooled-frame confidence.
+21. Scheduler provenance is part of experimental provenance. Phase 2f used 12 named base submissions for 73 logical tasks,
+    never exceeded eight concurrent allocations, and records four same-ID operator requeues caused by nested-step stalls.
 
 ## Rejected shortcuts
 
@@ -90,3 +109,6 @@ Priority order:
 - Do not claim camera sensitivity from a shuffled-`K` control when the split contains one unique intrinsic matrix.
 - Do not infer deployability from parameter count without synchronized component and end-to-end latency.
 - Do not reuse the opened Phase 2e kv2 test as an untouched Phase 2f final set.
+- Do not reinterpret a frozen head-only latency gate after seeing a more favorable encoder-plus-head ratio.
+- Do not claim an enhanced architecture or camera-conditioning hypothesis failed when its formal training was skipped.
+- Do not open a reserved final set merely to produce a number after the selector returns no survivor.
