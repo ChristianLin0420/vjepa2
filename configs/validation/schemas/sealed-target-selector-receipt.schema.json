@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "SealedTargetSelectorReceipt": {
+      "additionalProperties": false,
+      "description": "Standard selector decision that binds its survivor to every frozen input.",
+      "properties": {
+        "base_ledger_sha256": {
+          "title": "Base Ledger Sha256",
+          "type": "string"
+        },
+        "calibrator_sha256": {
+          "title": "Calibrator Sha256",
+          "type": "string"
+        },
+        "checkpoint_sha256": {
+          "title": "Checkpoint Sha256",
+          "type": "string"
+        },
+        "clean_git_commit": {
+          "const": true,
+          "title": "Clean Git Commit",
+          "type": "boolean"
+        },
+        "config_sha256": {
+          "title": "Config Sha256",
+          "type": "string"
+        },
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "event_store_sha256": {
+          "title": "Event Store Sha256",
+          "type": "string"
+        },
+        "final_authorized": {
+          "const": true,
+          "title": "Final Authorized",
+          "type": "boolean"
+        },
+        "git_commit": {
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "intent": {
+          "const": "one-shot-external-evaluation",
+          "title": "Intent",
+          "type": "string"
+        },
+        "preregistration_sha256": {
+          "title": "Preregistration Sha256",
+          "type": "string"
+        },
+        "registry_sha256": {
+          "title": "Registry Sha256",
+          "type": "string"
+        },
+        "resolved_instance_sha256": {
+          "title": "Resolved Instance Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "jepa4d-sealed-target-selector-receipt-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "split_id": {
+          "title": "Split Id",
+          "type": "string"
+        },
+        "survivor": {
+          "title": "Survivor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "final_authorized",
+        "dataset_id",
+        "split_id",
+        "registry_sha256",
+        "base_ledger_sha256",
+        "event_store_sha256",
+        "resolved_instance_sha256",
+        "survivor",
+        "git_commit",
+        "clean_git_commit",
+        "intent",
+        "preregistration_sha256",
+        "checkpoint_sha256",
+        "config_sha256",
+        "calibrator_sha256"
+      ],
+      "title": "SealedTargetSelectorReceipt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Ed25519-signed selector authority envelope.",
+  "properties": {
+    "key_id": {
+      "title": "Key Id",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/SealedTargetSelectorReceipt"
+    },
+    "schema_version": {
+      "const": "jepa4d-signed-sealed-target-selector-receipt-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "signature_ed25519_base64": {
+      "title": "Signature Ed25519 Base64",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "key_id",
+    "payload",
+    "signature_ed25519_base64"
+  ],
+  "title": "SignedSealedTargetSelectorReceipt",
+  "type": "object"
+}

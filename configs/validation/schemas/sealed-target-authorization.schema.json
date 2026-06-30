@@ -1,0 +1,256 @@
+{
+  "$defs": {
+    "ArtifactBinding": {
+      "additionalProperties": false,
+      "description": "A source artifact identity captured without persisting its local path.",
+      "properties": {
+        "bytes": {
+          "minimum": 1,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "bytes"
+      ],
+      "title": "ArtifactBinding",
+      "type": "object"
+    },
+    "SealedTargetSelectorReceipt": {
+      "additionalProperties": false,
+      "description": "Standard selector decision that binds its survivor to every frozen input.",
+      "properties": {
+        "base_ledger_sha256": {
+          "title": "Base Ledger Sha256",
+          "type": "string"
+        },
+        "calibrator_sha256": {
+          "title": "Calibrator Sha256",
+          "type": "string"
+        },
+        "checkpoint_sha256": {
+          "title": "Checkpoint Sha256",
+          "type": "string"
+        },
+        "clean_git_commit": {
+          "const": true,
+          "title": "Clean Git Commit",
+          "type": "boolean"
+        },
+        "config_sha256": {
+          "title": "Config Sha256",
+          "type": "string"
+        },
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "event_store_sha256": {
+          "title": "Event Store Sha256",
+          "type": "string"
+        },
+        "final_authorized": {
+          "const": true,
+          "title": "Final Authorized",
+          "type": "boolean"
+        },
+        "git_commit": {
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "intent": {
+          "const": "one-shot-external-evaluation",
+          "title": "Intent",
+          "type": "string"
+        },
+        "preregistration_sha256": {
+          "title": "Preregistration Sha256",
+          "type": "string"
+        },
+        "registry_sha256": {
+          "title": "Registry Sha256",
+          "type": "string"
+        },
+        "resolved_instance_sha256": {
+          "title": "Resolved Instance Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "jepa4d-sealed-target-selector-receipt-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "split_id": {
+          "title": "Split Id",
+          "type": "string"
+        },
+        "survivor": {
+          "title": "Survivor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "final_authorized",
+        "dataset_id",
+        "split_id",
+        "registry_sha256",
+        "base_ledger_sha256",
+        "event_store_sha256",
+        "resolved_instance_sha256",
+        "survivor",
+        "git_commit",
+        "clean_git_commit",
+        "intent",
+        "preregistration_sha256",
+        "checkpoint_sha256",
+        "config_sha256",
+        "calibrator_sha256"
+      ],
+      "title": "SealedTargetSelectorReceipt",
+      "type": "object"
+    },
+    "SignedSealedTargetSelectorReceipt": {
+      "additionalProperties": false,
+      "description": "Ed25519-signed selector authority envelope.",
+      "properties": {
+        "key_id": {
+          "title": "Key Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/SealedTargetSelectorReceipt"
+        },
+        "schema_version": {
+          "const": "jepa4d-signed-sealed-target-selector-receipt-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature_ed25519_base64": {
+          "title": "Signature Ed25519 Base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "key_id",
+        "payload",
+        "signature_ed25519_base64"
+      ],
+      "title": "SignedSealedTargetSelectorReceipt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Typed, content-addressed authority to open one sealed external target once.",
+  "properties": {
+    "base_ledger_sha256": {
+      "title": "Base Ledger Sha256",
+      "type": "string"
+    },
+    "calibrator": {
+      "$ref": "#/$defs/ArtifactBinding"
+    },
+    "checkpoint": {
+      "$ref": "#/$defs/ArtifactBinding"
+    },
+    "clean_git_commit": {
+      "const": true,
+      "title": "Clean Git Commit",
+      "type": "boolean"
+    },
+    "config": {
+      "$ref": "#/$defs/ArtifactBinding"
+    },
+    "dataset_id": {
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "event_store_sha256": {
+      "title": "Event Store Sha256",
+      "type": "string"
+    },
+    "git_commit": {
+      "title": "Git Commit",
+      "type": "string"
+    },
+    "intent": {
+      "const": "one-shot-external-evaluation",
+      "title": "Intent",
+      "type": "string"
+    },
+    "operation": {
+      "const": "external-evaluation",
+      "title": "Operation",
+      "type": "string"
+    },
+    "preregistration": {
+      "$ref": "#/$defs/ArtifactBinding"
+    },
+    "registry_sha256": {
+      "title": "Registry Sha256",
+      "type": "string"
+    },
+    "resolved_instance_sha256": {
+      "title": "Resolved Instance Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "jepa4d-sealed-target-authorization-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selector": {
+      "$ref": "#/$defs/ArtifactBinding"
+    },
+    "signed_selector": {
+      "$ref": "#/$defs/SignedSealedTargetSelectorReceipt"
+    },
+    "split_id": {
+      "title": "Split Id",
+      "type": "string"
+    },
+    "survivor": {
+      "title": "Survivor",
+      "type": "string"
+    },
+    "use_limit": {
+      "const": 1,
+      "title": "Use Limit",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "split_id",
+    "registry_sha256",
+    "base_ledger_sha256",
+    "event_store_sha256",
+    "resolved_instance_sha256",
+    "survivor",
+    "git_commit",
+    "clean_git_commit",
+    "operation",
+    "intent",
+    "use_limit",
+    "preregistration",
+    "selector",
+    "checkpoint",
+    "config",
+    "calibrator",
+    "signed_selector"
+  ],
+  "title": "SealedTargetAuthorization",
+  "type": "object"
+}

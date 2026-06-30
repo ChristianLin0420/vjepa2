@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "EventStoreSpec": {
+      "additionalProperties": false,
+      "description": "Portable identity for the one canonical local event store.",
+      "properties": {
+        "deployment_blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deployment Blocker"
+        },
+        "durability": {
+          "enum": [
+            "local-filesystem-best-effort",
+            "external-append-only"
+          ],
+          "title": "Durability",
+          "type": "string"
+        },
+        "externally_append_only": {
+          "title": "Externally Append Only",
+          "type": "boolean"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "root_env": {
+          "title": "Root Env",
+          "type": "string"
+        }
+      },
+      "required": [
+        "root_env",
+        "relative_path",
+        "durability",
+        "externally_append_only"
+      ],
+      "title": "EventStoreSpec",
+      "type": "object"
+    },
+    "FirstOpenLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Id"
+        },
+        "experiment_id": {
+          "title": "Experiment Id",
+          "type": "string"
+        },
+        "git_commit": {
+          "title": "Git Commit",
+          "type": "string"
+        },
+        "imported_historical": {
+          "default": false,
+          "title": "Imported Historical",
+          "type": "boolean"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "opened_at": {
+          "title": "Opened At",
+          "type": "string"
+        },
+        "registry_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registry Sha256"
+        },
+        "source_record": {
+          "title": "Source Record",
+          "type": "string"
+        },
+        "source_record_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Record Sha256"
+        },
+        "time_precision": {
+          "$ref": "#/$defs/TimePrecision"
+        }
+      },
+      "required": [
+        "opened_at",
+        "time_precision",
+        "experiment_id",
+        "git_commit",
+        "source_record",
+        "notes"
+      ],
+      "title": "FirstOpenLineage",
+      "type": "object"
+    },
+    "FutureUse": {
+      "enum": [
+        "regression",
+        "mechanism-diagnostic",
+        "reproducibility-audit",
+        "reporting",
+        "no-future-use"
+      ],
+      "title": "FutureUse",
+      "type": "string"
+    },
+    "LedgerState": {
+      "enum": [
+        "planned-unavailable",
+        "available-unopened",
+        "sealed-unopened",
+        "server-only-unopened",
+        "consumed"
+      ],
+      "title": "LedgerState",
+      "type": "string"
+    },
+    "LedgerTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "first_open": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FirstOpenLineage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "permitted_future_uses": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FutureUse"
+          },
+          "title": "Permitted Future Uses",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "seal_evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seal Evidence"
+        },
+        "split_id": {
+          "title": "Split Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/LedgerState"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "split_id",
+        "state",
+        "notes"
+      ],
+      "title": "LedgerTarget",
+      "type": "object"
+    },
+    "TimePrecision": {
+      "enum": [
+        "exact",
+        "day",
+        "unknown"
+      ],
+      "title": "TimePrecision",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event_store": {
+      "$ref": "#/$defs/EventStoreSpec"
+    },
+    "ledger_version": {
+      "title": "Ledger Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "jepa4d-consumed-test-ledger-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "$ref": "#/$defs/LedgerTarget"
+      },
+      "title": "Targets",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "ledger_version",
+    "event_store",
+    "targets"
+  ],
+  "title": "ConsumedTestLedger",
+  "type": "object"
+}

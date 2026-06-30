@@ -61,7 +61,8 @@ Every learned stage must eventually have at least two common evaluation sources 
 - **Dataset A2 — complementary development benchmark, when needed:** a different labeled capability that may be fitted or
   selected jointly with A1; it does not support an independent-transfer claim;
 - **Dataset B — transfer/external benchmark, when that claim is sought:** architecture and decision rules are frozen
-  before formal targets are opened; task-specific probe fitting is allowed only if its recipe was frozen on Dataset A;
+  before formal targets are opened, and the B-role source is never used for fitting or selection. If a benchmark requires
+  a task-specific fitting split, register that fit portion separately as A2 and keep the disjoint confirmation target B;
 - **optional Dataset C — stress/safety:** distribution shift, occlusion, long horizon, or rare failure modes.
 
 Two complementary sources satisfy the minimum coverage requirement, but not the L2 cross-dataset promotion level. A
@@ -326,12 +327,15 @@ eight-allocation policy.
 
 ### Wave A — benchmark foundations
 
-- [ ] Freeze this master plan and stage file template.
+- [x] Freeze this master plan and stage file template (`21af2f3`).
 - [ ] Complete license/access/storage audit for every declared A1/A2/B/C source.
-- [ ] Add a machine-readable validation registry and consumed-test ledger.
-- [ ] Add manifest schema for scene/video/subject/episode split units.
-- [ ] Add shared paired-bootstrap and failure-taxonomy utilities.
-- [ ] Add dashboard/report templates that label evidence level and data role.
+- [x] Add a machine-readable validation registry and consumed-test ledger.
+- [x] Add manifest schema for scene/video/subject/episode split units.
+- [x] Add shared paired-bootstrap and failure-taxonomy utilities.
+- [x] Add dashboard/report templates that label evidence level and data role.
+
+Implementation status, commands, verification, and the still-incomplete portfolio audit are in
+[validation/WAVE_A_FOUNDATION.md](validation/WAVE_A_FOUNDATION.md).
 
 ### Wave B — representation and geometry
 

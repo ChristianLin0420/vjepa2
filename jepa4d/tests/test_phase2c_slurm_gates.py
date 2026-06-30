@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -329,6 +330,18 @@ def _formal_output(root: Path) -> Path:
 
 
 def _validate(output: Path, report: Path) -> subprocess.CompletedProcess[str]:
+    # Each validator process imports PyTorch to inspect checkpoint tensors.  A
+    # full-suite run can otherwise multiply the login node's BLAS/OpenMP thread
+    # count and spend the entire subprocess timeout waiting on CPU contention.
+    # One thread is sufficient for these tiny contract fixtures and makes the
+    # gate test independent of the machine-wide core count.
+    environment = {
+        **os.environ,
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+    }
     return subprocess.run(
         [
             sys.executable,
@@ -341,8 +354,9 @@ def _validate(output: Path, report: Path) -> subprocess.CompletedProcess[str]:
         ],
         check=False,
         capture_output=True,
+        env=environment,
         text=True,
-        timeout=120,
+        timeout=300,
     )
 
 

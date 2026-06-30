@@ -1,0 +1,752 @@
+{
+  "$defs": {
+    "AccessOperation": {
+      "enum": [
+        "download",
+        "decode-smoke",
+        "training",
+        "tuning",
+        "calibration",
+        "checkpoint-selection",
+        "development-evaluation",
+        "external-evaluation",
+        "stress-evaluation",
+        "regression",
+        "mechanism-diagnostic",
+        "reporting",
+        "metadata-audit"
+      ],
+      "title": "AccessOperation",
+      "type": "string"
+    },
+    "AccessSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "credentials_env": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Credentials Env",
+          "type": "array"
+        },
+        "method": {
+          "enum": [
+            "public",
+            "click-through",
+            "account",
+            "request",
+            "evaluation-server",
+            "generated"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewed At"
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer"
+        },
+        "status": {
+          "$ref": "#/$defs/AuditStatus"
+        }
+      },
+      "required": [
+        "status",
+        "method"
+      ],
+      "title": "AccessSpec",
+      "type": "object"
+    },
+    "ArtifactRule": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "enum": [
+            "raw-data",
+            "raw-targets",
+            "sample-identifiers",
+            "derived-features",
+            "predictions",
+            "aggregate-metrics",
+            "qualitative-preview"
+          ],
+          "title": "Artifact",
+          "type": "string"
+        },
+        "local": {
+          "enum": [
+            "deny",
+            "restricted",
+            "allowed"
+          ],
+          "title": "Local",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "repository": {
+          "enum": [
+            "deny",
+            "metadata-only",
+            "allowed"
+          ],
+          "title": "Repository",
+          "type": "string"
+        },
+        "wandb": {
+          "enum": [
+            "deny",
+            "aggregate-only",
+            "preapproved-only",
+            "allowed"
+          ],
+          "title": "Wandb",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact",
+        "local",
+        "wandb",
+        "repository",
+        "notes"
+      ],
+      "title": "ArtifactRule",
+      "type": "object"
+    },
+    "AuditStatus": {
+      "enum": [
+        "pending",
+        "approved",
+        "blocked"
+      ],
+      "title": "AuditStatus",
+      "type": "string"
+    },
+    "DataRole": {
+      "enum": [
+        "A1",
+        "A2",
+        "B",
+        "C",
+        "contract-only"
+      ],
+      "title": "DataRole",
+      "type": "string"
+    },
+    "DatasetEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "$ref": "#/$defs/AccessSpec"
+        },
+        "artifact_rules": {
+          "items": {
+            "$ref": "#/$defs/ArtifactRule"
+          },
+          "minItems": 1,
+          "title": "Artifact Rules",
+          "type": "array"
+        },
+        "claim_use": {
+          "title": "Claim Use",
+          "type": "string"
+        },
+        "dataset_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]+$",
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "hashes": {
+          "items": {
+            "$ref": "#/$defs/HashSpec"
+          },
+          "minItems": 1,
+          "title": "Hashes",
+          "type": "array"
+        },
+        "license": {
+          "$ref": "#/$defs/LicenseSpec"
+        },
+        "role": {
+          "$ref": "#/$defs/DataRole"
+        },
+        "sealed_authority": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SealedAuthoritySpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "$ref": "#/$defs/SourceSpec"
+        },
+        "splits": {
+          "items": {
+            "$ref": "#/$defs/SplitSpec"
+          },
+          "minItems": 1,
+          "title": "Splits",
+          "type": "array"
+        },
+        "stages": {
+          "items": {
+            "pattern": "^phase[0-6]$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Stages",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/DatasetStatus"
+        },
+        "storage": {
+          "$ref": "#/$defs/StorageSpec"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "display_name",
+        "stages",
+        "role",
+        "status",
+        "claim_use",
+        "source",
+        "license",
+        "access",
+        "storage",
+        "hashes",
+        "splits",
+        "artifact_rules"
+      ],
+      "title": "DatasetEntry",
+      "type": "object"
+    },
+    "DatasetStatus": {
+      "enum": [
+        "planned",
+        "active-development",
+        "historical-consumed",
+        "external-sealed",
+        "contract-only"
+      ],
+      "title": "DatasetStatus",
+      "type": "string"
+    },
+    "HashSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bytes"
+        },
+        "kind": {
+          "enum": [
+            "archive",
+            "metadata",
+            "id-manifest",
+            "split-manifest",
+            "fixture"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "provenance": {
+          "title": "Provenance",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "published",
+            "verified"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "status",
+        "provenance"
+      ],
+      "title": "HashSpec",
+      "type": "object"
+    },
+    "IndependentUnit": {
+      "enum": [
+        "scene",
+        "video",
+        "subject",
+        "episode",
+        "recording",
+        "sequence",
+        "trajectory",
+        "image",
+        "environment",
+        "generated-case"
+      ],
+      "title": "IndependentUnit",
+      "type": "string"
+    },
+    "LicenseSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "privacy_notes": {
+          "title": "Privacy Notes",
+          "type": "string"
+        },
+        "redistribution": {
+          "enum": [
+            "prohibited",
+            "metadata-only",
+            "derived-only",
+            "allowed",
+            "pending"
+          ],
+          "title": "Redistribution",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AuditStatus"
+        },
+        "terms_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Terms Url"
+        }
+      },
+      "required": [
+        "status",
+        "redistribution",
+        "privacy_notes"
+      ],
+      "title": "LicenseSpec",
+      "type": "object"
+    },
+    "SealedAuthoritySpec": {
+      "additionalProperties": false,
+      "description": "Registry-governed Ed25519 authority for one-shot selector decisions.",
+      "properties": {
+        "approved_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved At"
+        },
+        "approved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved By"
+        },
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "key_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key Id"
+        },
+        "public_key_ed25519_base64": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Key Ed25519 Base64"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "approved",
+            "blocked",
+            "revoked"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "SealedAuthoritySpec",
+      "type": "object"
+    },
+    "SourceSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "citation": {
+          "title": "Citation",
+          "type": "string"
+        },
+        "official_url": {
+          "title": "Official Url",
+          "type": "string"
+        },
+        "paper_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paper Url"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "official_url",
+        "version",
+        "citation"
+      ],
+      "title": "SourceSpec",
+      "type": "object"
+    },
+    "SplitPurpose": {
+      "enum": [
+        "train",
+        "validation",
+        "calibration",
+        "development-test",
+        "transfer-test",
+        "external-test",
+        "stress-test",
+        "regression",
+        "contract"
+      ],
+      "title": "SplitPurpose",
+      "type": "string"
+    },
+    "SplitSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_operations": {
+          "items": {
+            "$ref": "#/$defs/AccessOperation"
+          },
+          "title": "Allowed Operations",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "expected_units": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Units"
+        },
+        "id_manifest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id Manifest"
+        },
+        "id_manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id Manifest Sha256"
+        },
+        "independent_unit": {
+          "$ref": "#/$defs/IndependentUnit"
+        },
+        "official_name": {
+          "title": "Official Name",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/$defs/SplitPurpose"
+        },
+        "seal_condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seal Condition"
+        },
+        "selection_rule": {
+          "title": "Selection Rule",
+          "type": "string"
+        },
+        "split_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]+$",
+          "title": "Split Id",
+          "type": "string"
+        },
+        "target_state": {
+          "$ref": "#/$defs/TargetState"
+        },
+        "targets_present": {
+          "title": "Targets Present",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "split_id",
+        "official_name",
+        "purpose",
+        "independent_unit",
+        "target_state",
+        "targets_present",
+        "selection_rule",
+        "allowed_operations"
+      ],
+      "title": "SplitSpec",
+      "type": "object"
+    },
+    "StorageSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "cache_root_env": {
+          "title": "Cache Root Env",
+          "type": "string"
+        },
+        "expected_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Bytes"
+        },
+        "raw_root_env": {
+          "title": "Raw Root Env",
+          "type": "string"
+        },
+        "retention": {
+          "title": "Retention",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AuditStatus"
+        }
+      },
+      "required": [
+        "status",
+        "raw_root_env",
+        "cache_root_env",
+        "retention"
+      ],
+      "title": "StorageSpec",
+      "type": "object"
+    },
+    "TargetState": {
+      "enum": [
+        "open",
+        "sealed",
+        "server-only",
+        "unavailable",
+        "not-applicable"
+      ],
+      "title": "TargetState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "datasets": {
+      "items": {
+        "$ref": "#/$defs/DatasetEntry"
+      },
+      "minItems": 1,
+      "title": "Datasets",
+      "type": "array"
+    },
+    "portfolio_version": {
+      "title": "Portfolio Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "jepa4d-validation-registry-v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "portfolio_version",
+    "datasets"
+  ],
+  "title": "DatasetRegistry",
+  "type": "object"
+}

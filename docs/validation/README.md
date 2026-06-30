@@ -15,7 +15,8 @@ are plans, not completed evidence and not authorization to submit jobs.
 
 The common state machine, dataset-role policy, logging contract, Slurm constraints, and project execution waves are in
 [the master validation plan](../VALIDATION_PLAN.md). Metric formulas and cross-phase boundaries are in
-[the metric guide](../METRICS.md). Use [TEMPLATE.md](TEMPLATE.md) when adding a new stage.
+[the metric guide](../METRICS.md). The implemented foundation and remaining blockers are tracked in
+[the Wave A implementation record](WAVE_A_FOUNDATION.md). Use [TEMPLATE.md](TEMPLATE.md) when adding a new stage.
 
 ## Authority order
 

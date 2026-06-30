@@ -1,0 +1,137 @@
+schema_version: jepa4d-consumed-test-ledger-v1
+ledger_version: 2026-06-30-wave-a-v1
+event_store:
+  root_env: JEPA4D_VALIDATION_STATE_ROOT
+  relative_path: consumed-test-events/2026-06-30-wave-a-v1
+  durability: local-filesystem-best-effort
+  externally_append_only: false
+  deployment_blocker: A trusted externally append-only ledger service is not yet deployed; local filesystem state is best-effort governance only.
+targets:
+  - dataset_id: sun-rgbd.geometry-development
+    split_id: sun-rgbd.phase2e-kv2-test
+    state: consumed
+    first_open:
+      opened_at: '2026-06-29'
+      time_precision: day
+      experiment_id: phase2e-sunrgbd-factorized-geometry-v1
+      git_commit: 547ecc1ee2d2cc40863c179b625ce7952010a94d
+      execution_id: phase2e-final
+      source_record: docs/experiments/2026-06-29-phase2e-sunrgbd.md
+      source_record_sha256: 5e0c0df3d62327c261e7c5e21c0d2a5ea3f702b5e64c3d5d44cdef55a2d8f114
+      imported_historical: true
+      notes: Exact first target-read timestamp predates the common ledger; day and execution lineage are imported from the final record.
+    permitted_future_uses: [regression, mechanism-diagnostic, reproducibility-audit, reporting]
+    notes: Kinect-v2 was opened by Phase 2e. Phase 2f subsequently made all four SUN sensor families development-consumed.
+
+  - dataset_id: tum-rgbd.geometry-regression
+    split_id: tum-rgbd.phase2b-freiburg1-xyz-test
+    state: consumed
+    first_open:
+      opened_at: '2026-06-29'
+      time_precision: day
+      experiment_id: phase2b-jepa-geometry-distillation-v1
+      git_commit: unknown
+      source_record: docs/experiments/2026-06-29-phase2b-prepared-blocked.md
+      source_record_sha256: c0552924478bba431c8b48f3aac5102c7d7edbd2338c7d5b2092145bad8a6e9a
+      imported_historical: true
+      notes: The common ledger did not exist; the exact first-open commit/time is unknown and is not inferred from later jobs.
+    permitted_future_uses: [regression, mechanism-diagnostic, reproducibility-audit, reporting]
+    notes: Chronological Freiburg1 XYZ test frames are historical development evidence only.
+
+  - dataset_id: sun-rgbd.geometry-development
+    split_id: sun-rgbd.phase2f-four-family-development
+    state: consumed
+    first_open:
+      opened_at: '2026-06-30T04:43:22.436760+00:00'
+      time_precision: exact
+      experiment_id: 043d074d-20260630T043658Z
+      git_commit: 043d074dba2d6d757cb92295dd041407977b9ff5
+      execution_id: 043d074d-20260630T043658Z
+      source_record: docs/experiments/2026-06-29-phase2f-scale-camera.md
+      source_record_sha256: 5b447b863ab9c630dc6ffcea971448dd7362bb5c0d307453c789a349c7d6d629
+      imported_historical: true
+      notes: The Phase 2f cache receipt gives the exact cache creation time and execution lineage.
+    permitted_future_uses: [regression, mechanism-diagnostic, reproducibility-audit, reporting]
+    notes: All four 128-sample sensor-family subsets and held-out-family rotations are development-consumed.
+
+  - dataset_id: tum-rgbd.geometry-regression
+    split_id: tum-rgbd.phase2c-freiburg3-test
+    state: consumed
+    first_open:
+      opened_at: '2026-06-29'
+      time_precision: day
+      experiment_id: phase2c-cross-sequence-fusion-9a8f8f0cb5fb-20260629T120903Z
+      git_commit: 9a8f8f0cb5fbe8aa55b609845d9204df885f0d95
+      execution_id: 9a8f8f0cb5fb-20260629T120903Z
+      source_record: docs/experiments/2026-06-29-phase2c-cross-sequence.md
+      source_record_sha256: 591f37b12bf121ae568bd9637ad108dd7b5524d5daa37f0067482cb55e6a4625
+      imported_historical: true
+      notes: The formal record identifies the run and commit; only day precision is claimed for the first target read.
+    permitted_future_uses: [regression, mechanism-diagnostic, reproducibility-audit, reporting]
+    notes: Both Freiburg3 recordings were also reused by Phase 2d mechanisms and cannot support fresh transfer claims.
+
+  - dataset_id: diode.geometry-external
+    split_id: diode.validation-external
+    state: sealed-unopened
+    seal_evidence: Phase 2f final receipt records fresh_final_opened=false and archive_touched=false; compressed bytes only were hash-audited.
+    notes: Do not list, extract, decode, summarize, preview, or expose this path before a separately frozen one-shot authorization.
+
+  - dataset_id: davis2017.identity-development
+    split_id: davis2017.dogs-scale-exploratory
+    state: consumed
+    first_open:
+      opened_at: '2026-06-29'
+      time_precision: day
+      experiment_id: 2026-06-29-identity-davis-dogs-scale-v1
+      git_commit: e14fcce
+      source_record: docs/experiments/2026-06-29-identity-ablation.md
+      source_record_sha256: 7eeea6f919d3d179fb180bb70d5f3c711ddd852de9ec07107dd40efd0a070272
+      imported_historical: true
+      notes: The record supplies a baseline commit but not an exact first-read timestamp; selection and evaluation shared this sequence.
+    permitted_future_uses: [regression, mechanism-diagnostic, reproducibility-audit, reporting]
+    notes: dogs-scale is exploratory/consumed and must be excluded from future promotion selection and independent aggregates.
+
+  - dataset_id: ssv2.representation-development
+    split_id: ssv2.official-validation
+    state: planned-unavailable
+    notes: Release, terms, hashes, storage, and ordered official IDs remain pending.
+
+  - dataset_id: epic-kitchens-100.representation-development
+    split_id: epic-kitchens-100.official-validation
+    state: planned-unavailable
+    notes: Release, terms, hashes, storage, and participant/video manifest remain pending.
+
+  - dataset_id: coco2017.grounding-development
+    split_id: coco2017.validation-grounding
+    state: planned-unavailable
+    notes: Image-level and annotation terms plus exact archive hashes remain pending.
+
+  - dataset_id: ego4d.memory-development
+    split_id: ego4d.episodic-memory-validation
+    state: planned-unavailable
+    notes: Dataset agreement, release, task manifests, expected storage, and hashes remain pending.
+
+  - dataset_id: maniskill3.planning-system
+    split_id: maniskill3.phase5-development
+    state: planned-unavailable
+    notes: Phase-5 task/scene/seed reservation and simulator/asset pins remain pending.
+
+  - dataset_id: maniskill3.planning-system
+    split_id: maniskill3.phase6-reserved
+    state: planned-unavailable
+    notes: Must be manifest-disjoint from every Phase-5 task, scene, and seed before use.
+
+  - dataset_id: libero.planning-system-transfer
+    split_id: libero.phase5-transfer
+    state: planned-unavailable
+    notes: Frozen transfer suite/task/seed manifest and license audit remain pending.
+
+  - dataset_id: libero.planning-system-transfer
+    split_id: libero.phase6-reserved
+    state: planned-unavailable
+    notes: Must be manifest-disjoint from Phase-5 transfer and remain unavailable to selection code.
+
+  - dataset_id: behavior-1k.long-horizon-stress
+    split_id: behavior-1k.long-horizon-stress
+    state: planned-unavailable
+    notes: Simulator, scene/object license, storage, and fixed stress manifest remain pending.

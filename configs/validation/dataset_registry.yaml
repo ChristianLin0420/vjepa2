@@ -1,0 +1,577 @@
+schema_version: jepa4d-validation-registry-v1
+portfolio_version: 2026-06-30-wave-a-v1
+datasets:
+  - dataset_id: robo4d.contract-fixture
+    display_name: Robo4D-JEPA generated contract fixture
+    stages: [phase0]
+    role: contract-only
+    status: contract-only
+    claim_use: Loader, schema, metric, artifact, and report contract checks only.
+    source:
+      official_url: generated://jepa4d/config/benchmarks/phase6_contract.yaml
+      version: v1
+      citation: JEPA-4D repository-generated fixture; not external benchmark evidence.
+    license: &approved_mit
+      status: approved
+      name: MIT
+      terms_url: https://opensource.org/license/mit
+      redistribution: allowed
+      privacy_notes: Generated data contains no people or private source material.
+    access:
+      status: approved
+      method: generated
+      reviewed_at: '2026-06-30'
+      reviewer: Wave A repository audit
+    storage:
+      status: approved
+      expected_bytes: 323
+      raw_root_env: JEPA4D_DATA_ROOT
+      cache_root_env: JEPA4D_CACHE_ROOT
+      retention: Versioned repository fixture.
+    hashes:
+      - name: phase6_contract.yaml
+        kind: fixture
+        status: verified
+        sha256: 91883e51d56af0290ea98bf7c748921ab1f46cff5a7c8e06902bc80f1ae36a01
+        bytes: 323
+        provenance: Repository SHA-256 audit on 2026-06-30.
+    splits:
+      - split_id: robo4d.contract-fixture.generated
+        official_name: generated
+        purpose: contract
+        independent_unit: generated-case
+        target_state: not-applicable
+        targets_present: false
+        selection_rule: All deterministic generated cases in fixture v1.
+        expected_units: 1
+        allowed_operations: [decode-smoke, reporting]
+    artifact_rules:
+      - artifact: raw-data
+        local: restricted
+        wandb: deny
+        repository: allowed
+        notes: This generated contract fixture is repository-tracked and contains no external data.
+      - artifact: raw-targets
+        local: restricted
+        wandb: deny
+        repository: deny
+        notes: Raw targets never enter W&B or repository artifacts.
+      - artifact: sample-identifiers
+        local: allowed
+        wandb: preapproved-only
+        repository: metadata-only
+        notes: Hash or pseudonymize identifiers when terms require it.
+      - artifact: derived-features
+        local: restricted
+        wandb: deny
+        repository: deny
+        notes: Large or reconstructive features stay local.
+      - artifact: predictions
+        local: allowed
+        wandb: preapproved-only
+        repository: metadata-only
+        notes: Upload only when license and privacy audit explicitly permits it.
+      - artifact: aggregate-metrics
+        local: allowed
+        wandb: allowed
+        repository: allowed
+        notes: Aggregate metrics and provenance are the normal reporting surface.
+      - artifact: qualitative-preview
+        local: restricted
+        wandb: preapproved-only
+        repository: metadata-only
+        notes: Fixed previews require dataset-specific approval and redaction review.
+
+  - dataset_id: sun-rgbd.geometry-development
+    display_name: SUN RGB-D geometry development
+    stages: [phase2]
+    role: A1
+    status: historical-consumed
+    claim_use: Reusable development and regression only; prior Kinect-v2 and four-family results are consumed.
+    source:
+      official_url: https://rgbd.cs.princeton.edu/
+      version: SUNRGBD-v1
+      citation: Song, Lichtenberg, and Xiao, SUN RGB-D, CVPR 2015, plus constituent dataset citations.
+    license:
+      status: pending
+      redistribution: prohibited
+      privacy_notes: Internal research use; no raw samples are redistributed.
+      blocker: No unambiguous blanket license was found in the supplied archive; constituent terms require legal review.
+    access:
+      status: approved
+      method: public
+      reviewed_at: '2026-06-29'
+      reviewer: Phase 2e asset audit
+    storage:
+      status: approved
+      expected_bytes: 6885481608
+      raw_root_env: JEPA4D_DATA_ROOT
+      cache_root_env: JEPA4D_CACHE_ROOT
+      retention: Internal restricted storage; no redistribution.
+    hashes:
+      - name: SUNRGBD.zip
+        kind: archive
+        status: verified
+        sha256: 1a6dbf2a1c9044c4805a35ee648d616ea39a231fd5bd6f77e84cd2b8287fe41c
+        bytes: 6885481608
+        provenance: Phase 2e local archive audit.
+      - name: sun_rgbd_phase2e_sensor_blocked_v1.yaml
+        kind: split-manifest
+        status: verified
+        sha256: 174716f4f1bd4a4b709f2a4b1a1cd4dca4fd17ef34cc543c1fc8985b75b44c92
+        provenance: Repository manifest.
+      - name: phase2f four-family cache receipt
+        kind: split-manifest
+        status: verified
+        sha256: 9b22579d9c7e3c9789cbaabfe34e1592bfbf6ced54f6129f48453d123287e400
+        provenance: Phase 2f cache receipt containing the frozen four-family source identities.
+    splits:
+      - split_id: sun-rgbd.phase2e-kv2-test
+        official_name: Phase-2e sensor-blocked Kinect-v2 test
+        purpose: development-test
+        independent_unit: scene
+        target_state: open
+        targets_present: true
+        selection_rule: Frozen sorted-leaf rank-midpoint quantiles; 128 Kinect-v2 samples.
+        id_manifest: jepa4d/config/benchmarks/manifests/sun_rgbd_phase2e_sensor_blocked_v1.yaml
+        id_manifest_sha256: 174716f4f1bd4a4b709f2a4b1a1cd4dca4fd17ef34cc543c1fc8985b75b44c92
+        expected_units: 128
+        allowed_operations: [development-evaluation, regression, mechanism-diagnostic, reporting]
+      - split_id: sun-rgbd.phase2f-four-family-development
+        official_name: Phase-2f four-family development rotations
+        purpose: development-test
+        independent_unit: scene
+        target_state: open
+        targets_present: true
+        selection_rule: Frozen 128-sample subsets from each of kv1, kv2, realsense, and xtion; four held-out-family rotations.
+        id_manifest: outputs/jepa4d_phase2f/043d074d-20260630T043658Z/cache/cache_receipt.json
+        id_manifest_sha256: 9b22579d9c7e3c9789cbaabfe34e1592bfbf6ced54f6129f48453d123287e400
+        expected_units: 512
+        allowed_operations: [development-evaluation, regression, mechanism-diagnostic, reporting]
+    artifact_rules: &restricted_artifacts
+      - artifact: raw-data
+        local: restricted
+        wandb: deny
+        repository: deny
+        notes: Raw benchmark data remains under its approved local storage policy.
+      - artifact: raw-targets
+        local: restricted
+        wandb: deny
+        repository: deny
+        notes: Raw targets never enter W&B or repository artifacts.
+      - artifact: sample-identifiers
+        local: allowed
+        wandb: preapproved-only
+        repository: metadata-only
+        notes: Hash or pseudonymize identifiers when terms require it.
+      - artifact: derived-features
+        local: restricted
+        wandb: deny
+        repository: deny
+        notes: Large or reconstructive features stay local.
+      - artifact: predictions
+        local: allowed
+        wandb: preapproved-only
+        repository: metadata-only
+        notes: Upload only when license and privacy audit explicitly permits it.
+      - artifact: aggregate-metrics
+        local: allowed
+        wandb: allowed
+        repository: allowed
+        notes: Aggregate metrics and provenance are the normal reporting surface.
+      - artifact: qualitative-preview
+        local: restricted
+        wandb: preapproved-only
+        repository: metadata-only
+        notes: Fixed previews require dataset-specific approval and redaction review.
+
+  - dataset_id: tum-rgbd.geometry-regression
+    display_name: TUM RGB-D historical geometry suite
+    stages: [phase2]
+    role: A2
+    status: historical-consumed
+    claim_use: Consumed sequence-level evidence and deterministic regression; never fresh transfer evidence.
+    source:
+      official_url: https://cvg.cit.tum.de/data/datasets/rgbd-dataset
+      version: official-sequence-releases-2011
+      citation: Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012.
+    license:
+      status: approved
+      name: CC BY 4.0
+      terms_url: https://creativecommons.org/licenses/by/4.0/
+      redistribution: metadata-only
+      privacy_notes: Indoor research recordings; preserve source attribution and avoid raw-data redistribution.
+    access:
+      status: approved
+      method: public
+      reviewed_at: '2026-06-29'
+      reviewer: Phase 2b/2c asset audits
+    storage:
+      status: approved
+      raw_root_env: JEPA4D_DATA_ROOT
+      cache_root_env: JEPA4D_CACHE_ROOT
+      retention: Local benchmark archives and hash-bound derived caches.
+    hashes:
+      - name: rgbd_dataset_freiburg1_xyz.tgz
+        kind: archive
+        status: verified
+        sha256: a0236d97b8c30cd93b653656d2b6c293ff7c982a4130ef2a1a8beecdb124ef98
+        bytes: 448204271
+        provenance: Phase 2b manifest.
+      - name: tum_rgbd_phase2c_cross_sequence_v1.yaml
+        kind: split-manifest
+        status: verified
+        sha256: 9d3c892454b4036710b6604d278ad37fdcd6a8e5cee91ac8586411d8de213615
+        provenance: Repository manifest.
+    splits:
+      - split_id: tum-rgbd.phase2b-freiburg1-xyz-test
+        official_name: Freiburg1 XYZ Phase-2b chronological test
+        purpose: development-test
+        independent_unit: recording
+        target_state: open
+        targets_present: true
+        selection_rule: Eight frozen chronological held-out frames from manifest v1.0.1.
+        id_manifest: jepa4d/config/benchmarks/manifests/tum_rgbd_phase2b_v1.yaml
+        id_manifest_sha256: 84feb816ae3cabbd65a7c4d3cd2e00ad8ffbe1108fd762ce4cead59a584f5fb5
+        expected_units: 1
+        allowed_operations: [regression, mechanism-diagnostic, reporting]
+      - split_id: tum-rgbd.phase2c-freiburg3-test
+        official_name: Freiburg3 two-recording Phase-2c test
+        purpose: development-test
+        independent_unit: recording
+        target_state: open
+        targets_present: true
+        selection_rule: Two frozen recordings with 64 rank-midpoint frames each.
+        id_manifest: jepa4d/config/benchmarks/manifests/tum_rgbd_phase2c_cross_sequence_v1.yaml
+        id_manifest_sha256: 9d3c892454b4036710b6604d278ad37fdcd6a8e5cee91ac8586411d8de213615
+        expected_units: 2
+        allowed_operations: [regression, mechanism-diagnostic, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: diode.geometry-external
+    display_name: DIODE validation external geometry confirmation
+    stages: [phase2]
+    role: B
+    status: external-sealed
+    claim_use: One-shot indoor/outdoor transfer confirmation after a separately frozen survivor and preregistration.
+    source:
+      official_url: https://diode-dataset.org/
+      paper_url: https://arxiv.org/abs/1908.00463
+      version: validation-archive-audit-2026-06-30
+      citation: Vasiljevic et al., DIODE, 2019.
+    license:
+      status: approved
+      name: MIT
+      terms_url: https://diode-dataset.org/diode-dataset.github.io
+      redistribution: derived-only
+      privacy_notes: Indoor/outdoor images remain local; no raw samples or targets are uploaded or committed.
+    access:
+      status: approved
+      method: public
+      reviewed_at: '2026-06-30'
+      reviewer: Phase 2f asset audit plus official DIODE dataset-license section review
+    sealed_authority:
+      status: pending
+      blocker: Provision and approve a trusted Ed25519 public key/key-id; no private key belongs in this repository.
+    storage:
+      status: approved
+      expected_bytes: 2774625282
+      raw_root_env: JEPA4D_DIODE_SEALED_ROOT
+      cache_root_env: JEPA4D_CACHE_ROOT
+      retention: Sealed archive; no extraction or cache before authorized one-shot evaluation.
+    hashes:
+      - name: val.tar.gz
+        kind: archive
+        status: verified
+        sha256: 8e847e0923c57c221533c0040a49fc37a547af08f0a78ab235fdbf91dc362374
+        bytes: 2774625282
+        provenance: Phase 2f compressed-stream audit; target contents remained unopened.
+      - name: diode_meta.json
+        kind: metadata
+        status: verified
+        sha256: ea293e1e8eb5615430353291ea9b798d8e75b6672abfd90d185069a3f53b1288
+        bytes: 811851
+        provenance: DIODE devkit metadata audit.
+    splits:
+      - split_id: diode.validation-external
+        official_name: Official validation archive, indoor and outdoor
+        purpose: external-test
+        independent_unit: scene
+        target_state: sealed
+        targets_present: true
+        selection_rule: Complete official validation archive with frozen preprocessing; no target-dependent filtering.
+        allowed_operations: [metadata-audit, external-evaluation, reporting]
+        seal_condition: Exactly one development survivor, clean commit, frozen checkpoint/config/calibrator, and hash-bound external preregistration.
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: davis2017.identity-development
+    display_name: DAVIS 2017 identity development
+    stages: [phase3]
+    role: A1
+    status: historical-consumed
+    claim_use: dogs-scale is consumed exploratory evidence; future official sequences require disjoint frozen manifests.
+    source:
+      official_url: https://davischallenge.org/davis2017/code.html
+      paper_url: https://arxiv.org/abs/1704.00675
+      version: DAVIS-2017-trainval-480p
+      citation: Pont-Tuset et al., The 2017 DAVIS Challenge on Video Object Segmentation.
+    license:
+      status: pending
+      redistribution: prohibited
+      privacy_notes: Keep images and masks internal pending an unambiguous dataset license review.
+      blocker: The official download page does not state an unambiguous blanket data license.
+    access:
+      status: approved
+      method: public
+      reviewed_at: '2026-06-29'
+      reviewer: Identity ablation asset audit
+    storage:
+      status: approved
+      raw_root_env: JEPA4D_DATA_ROOT
+      cache_root_env: JEPA4D_CACHE_ROOT
+      retention: Internal restricted archive and derived metrics.
+    hashes:
+      - name: DAVIS-2017-trainval-480p.zip
+        kind: archive
+        status: verified
+        sha256: e3d0b5b77c3d031b000a19e0e25e3e2cac65d183755601bc2cf066df1a2aa492
+        provenance: Identity ablation asset audit.
+    splits:
+      - split_id: davis2017.dogs-scale-exploratory
+        official_name: trainval/dogs-scale, every fourth frame up to 21
+        purpose: development-test
+        independent_unit: video
+        target_state: open
+        targets_present: true
+        selection_rule: One named 83-frame sequence subsampled every fourth frame, maximum 21 frames.
+        expected_units: 1
+        allowed_operations: [regression, mechanism-diagnostic, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: ssv2.representation-development
+    display_name: Something-Something V2 representation development
+    stages: [phase1]
+    role: A1
+    status: planned
+    claim_use: Primary temporal discrimination development benchmark after access, split, and storage audits pass.
+    source:
+      official_url: https://www.qualcomm.com/developer/software/something-something-v-2-dataset/downloads
+      version: pending-release-pin
+      citation: Goyal et al., The Something Something Video Database for Learning and Evaluating Visual Common Sense.
+    license: &pending_license
+      status: pending
+      redistribution: pending
+      privacy_notes: No download or artifact use is authorized until source-specific terms are recorded.
+      blocker: Record the exact click-through terms, citation, privacy, and redistribution policy.
+    access: &pending_access
+      status: pending
+      method: click-through
+      blocker: Account/click-through approval and credential environment-variable names are not frozen.
+    storage: &pending_storage
+      status: pending
+      raw_root_env: JEPA4D_DATA_ROOT
+      cache_root_env: JEPA4D_CACHE_ROOT
+      retention: Pending source-specific retention review.
+      blocker: Exact archive bytes, decoded footprint, cache budget, and retention are not frozen.
+    hashes: &pending_hash
+      - name: official-release-assets
+        kind: archive
+        status: pending
+        provenance: Obtain or compute SHA-256 before decode.
+    splits:
+      - split_id: ssv2.official-validation
+        official_name: official validation
+        purpose: development-test
+        independent_unit: video
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Official validation split; exact release and ordered IDs remain to be frozen.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: epic-kitchens-100.representation-development
+    display_name: EPIC-KITCHENS-100 anticipation development
+    stages: [phase1]
+    role: A2
+    status: planned
+    claim_use: Complementary egocentric anticipation benchmark; not independent transfer when jointly selected.
+    source:
+      official_url: https://epic-kitchens.github.io/
+      version: EK100-release-to-pin
+      citation: Damen et al., Rescaling Egocentric Vision, IJCV 2022.
+    license: *pending_license
+    access: *pending_access
+    storage: *pending_storage
+    hashes: *pending_hash
+    splits:
+      - split_id: epic-kitchens-100.official-validation
+        official_name: official validation anticipation split
+        purpose: development-test
+        independent_unit: video
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Official validation split with participant/video disjointness; release IDs pending.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: coco2017.grounding-development
+    display_name: COCO 2017 grounding development
+    stages: [phase3]
+    role: A1
+    status: planned
+    claim_use: Detection, mask, and localization development after image/annotation terms are separately audited.
+    source:
+      official_url: https://cocodataset.org/#download
+      version: '2017'
+      citation: Lin et al., Microsoft COCO, ECCV 2014.
+    license:
+      status: pending
+      redistribution: pending
+      privacy_notes: Image licenses vary by source; annotation and image terms must be audited separately.
+      blocker: Freeze image-level license handling and annotation terms before download/artifact publication.
+    access:
+      status: pending
+      method: public
+      blocker: Exact archives, checksums, and approved local root are not yet recorded.
+    storage: *pending_storage
+    hashes: *pending_hash
+    splits:
+      - split_id: coco2017.validation-grounding
+        official_name: val2017
+        purpose: development-test
+        independent_unit: image
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Complete official val2017 split; exact archive identities pending.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: ego4d.memory-development
+    display_name: Ego4D episodic memory and EgoTracks
+    stages: [phase4]
+    role: A1
+    status: planned
+    claim_use: Temporal retrieval and re-detection development on official validation protocols.
+    source:
+      official_url: https://ego4d-data.org/docs/benchmarks/episodic-memory/
+      version: pending-release-pin
+      citation: Grauman et al., Ego4D, CVPR 2022.
+    license: *pending_license
+    access:
+      status: pending
+      method: account
+      credentials_env: [EGO4D_ACCESS_KEY_ID, EGO4D_SECRET_ACCESS_KEY]
+      blocker: Dataset agreement approval and exact release access are not recorded.
+    storage: *pending_storage
+    hashes: *pending_hash
+    splits:
+      - split_id: ego4d.episodic-memory-validation
+        official_name: episodic memory validation
+        purpose: development-test
+        independent_unit: video
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Official validation protocols for NLQ/VQ2D; exact release manifests pending.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: maniskill3.planning-system
+    display_name: ManiSkill3 planning and composed-system suites
+    stages: [phase5, phase6]
+    role: A1
+    status: planned
+    claim_use: Phase-5 development and Phase-6 composition use disjoint task/scene/seed manifests.
+    source:
+      official_url: https://maniskill.readthedocs.io/en/latest/
+      version: pending-code-and-asset-pin
+      citation: Tao et al., ManiSkill3, 2024.
+    license: *pending_license
+    access:
+      status: pending
+      method: public
+      blocker: Pin simulator commit, assets, asset terms, and task-card versions.
+    storage: *pending_storage
+    hashes: *pending_hash
+    splits:
+      - split_id: maniskill3.phase5-development
+        official_name: Phase-5 reserved task/scene/seed suite
+        purpose: development-test
+        independent_unit: episode
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Hash-frozen Phase-5 task/scene/seed reservation; manifest not yet created.
+        allowed_operations: [metadata-audit, reporting]
+      - split_id: maniskill3.phase6-reserved
+        official_name: Phase-6 disjoint composed task/scene/seed suite
+        purpose: external-test
+        independent_unit: episode
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Hash-frozen Phase-6 reservation disjoint from every Phase-5 ID; manifest not yet created.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: libero.planning-system-transfer
+    display_name: LIBERO planning transfer and composed-system suites
+    stages: [phase5, phase6]
+    role: B
+    status: planned
+    claim_use: Frozen transfer evaluation; Phase-5 and Phase-6 suites must remain disjoint.
+    source:
+      official_url: https://libero-project.github.io/
+      paper_url: https://arxiv.org/abs/2306.03310
+      version: pending-code-dataset-pin
+      citation: Liu et al., LIBERO, NeurIPS 2023.
+    license: *pending_license
+    access:
+      status: pending
+      method: public
+      blocker: Pin repository, benchmark assets, task suites, and every applicable license.
+    storage: *pending_storage
+    hashes: *pending_hash
+    splits:
+      - split_id: libero.phase5-transfer
+        official_name: Phase-5 frozen transfer suites
+        purpose: transfer-test
+        independent_unit: episode
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Frozen suite/task/seed manifest; no Phase-5 tuning on targets.
+        allowed_operations: [metadata-audit, reporting]
+      - split_id: libero.phase6-reserved
+        official_name: Phase-6 disjoint composed-system suites
+        purpose: external-test
+        independent_unit: episode
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Reserved suite/task/seed manifest disjoint from Phase-5 transfer; not yet created.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts
+
+  - dataset_id: behavior-1k.long-horizon-stress
+    display_name: BEHAVIOR-1K long-horizon stress suite
+    stages: [phase5, phase6]
+    role: C
+    status: planned
+    claim_use: Optional long-horizon household stress/safety evidence, never a tuning target.
+    source:
+      official_url: https://behavior.stanford.edu/
+      version: pending-release-pin
+      citation: Li et al., BEHAVIOR-1K, CoRL 2022.
+    license: *pending_license
+    access:
+      status: pending
+      method: public
+      blocker: Pin simulator/assets and audit all scene/object licenses before installation.
+    storage: *pending_storage
+    hashes: *pending_hash
+    splits:
+      - split_id: behavior-1k.long-horizon-stress
+        official_name: frozen long-horizon stress task suite
+        purpose: stress-test
+        independent_unit: episode
+        target_state: unavailable
+        targets_present: true
+        selection_rule: Fixed task/scene/seed and perturbation manifest; not yet created.
+        allowed_operations: [metadata-audit, reporting]
+    artifact_rules: *restricted_artifacts

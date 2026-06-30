@@ -1,0 +1,404 @@
+{
+  "$defs": {
+    "ClusterIdentity": {
+      "additionalProperties": false,
+      "description": "A unique independent cluster that may contain one or more source units.",
+      "properties": {
+        "cluster_id": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Cluster Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cluster_id"
+      ],
+      "title": "ClusterIdentity",
+      "type": "object"
+    },
+    "IndependentUnit": {
+      "enum": [
+        "scene",
+        "video",
+        "subject",
+        "episode",
+        "recording",
+        "sequence",
+        "trajectory",
+        "image",
+        "environment",
+        "generated-case"
+      ],
+      "title": "IndependentUnit",
+      "type": "string"
+    },
+    "MechanicalSelectionRule": {
+      "additionalProperties": false,
+      "description": "Executable identity of the prespecified unit-selection procedure.",
+      "properties": {
+        "algorithm": {
+          "pattern": "^[a-z0-9][a-z0-9._-]*-v[1-9][0-9]*$",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "eligibility_rules": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Eligibility Rules",
+          "type": "array"
+        },
+        "implementation": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Implementation",
+          "type": "string"
+        },
+        "implementation_sha256": {
+          "title": "Implementation Sha256",
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "seed": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "algorithm",
+        "implementation",
+        "implementation_sha256",
+        "seed",
+        "eligibility_rules"
+      ],
+      "title": "MechanicalSelectionRule",
+      "type": "object"
+    },
+    "RejectedUnitRow": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster_id": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Cluster Id",
+          "type": "string"
+        },
+        "disposition": {
+          "const": "rejected",
+          "default": "rejected",
+          "title": "Disposition",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "physical_unit_sha256": {
+          "title": "Physical Unit Sha256",
+          "type": "string"
+        },
+        "rejection_reason": {
+          "minLength": 1,
+          "title": "Rejection Reason",
+          "type": "string"
+        },
+        "source_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Asset Ids",
+          "type": "array"
+        },
+        "unit_id": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Unit Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit_id",
+        "cluster_id",
+        "physical_unit_sha256",
+        "source_asset_ids",
+        "rejection_reason"
+      ],
+      "title": "RejectedUnitRow",
+      "type": "object"
+    },
+    "SelectedUnitRow": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster_id": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Cluster Id",
+          "type": "string"
+        },
+        "disposition": {
+          "const": "selected",
+          "default": "selected",
+          "title": "Disposition",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "physical_unit_sha256": {
+          "title": "Physical Unit Sha256",
+          "type": "string"
+        },
+        "source_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Asset Ids",
+          "type": "array"
+        },
+        "unit_id": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Unit Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit_id",
+        "cluster_id",
+        "physical_unit_sha256",
+        "source_asset_ids"
+      ],
+      "title": "SelectedUnitRow",
+      "type": "object"
+    },
+    "SourceAssetIdentity": {
+      "additionalProperties": false,
+      "description": "Content identity for a source asset used by at least one unit row.",
+      "properties": {
+        "asset_id": {
+          "minLength": 1,
+          "pattern": "^[^\\s]+$",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "source_ref": {
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "source_ref",
+        "sha256",
+        "bytes"
+      ],
+      "title": "SourceAssetIdentity",
+      "type": "object"
+    },
+    "TargetIsolationAttestation": {
+      "additionalProperties": false,
+      "description": "Reviewer assertion backed by execution-generated path-denial evidence.\n\nA valid attestation does not prove isolation by itself.  The selector must\nstill execute with targets physically inaccessible; the receipt digest\nbinds this declaration to evidence produced by that isolation boundary.",
+      "properties": {
+        "path_denial_receipt_sha256": {
+          "title": "Path Denial Receipt Sha256",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "minLength": 1,
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "reviewer": {
+          "minLength": 1,
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "selector_implementation_sha256": {
+          "title": "Selector Implementation Sha256",
+          "type": "string"
+        },
+        "targets_accessible": {
+          "title": "Targets Accessible",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reviewer",
+        "reviewed_at",
+        "targets_accessible",
+        "selector_implementation_sha256",
+        "path_denial_receipt_sha256"
+      ],
+      "title": "TargetIsolationAttestation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A versioned, deterministic split decision over independent source units.",
+  "properties": {
+    "clusters": {
+      "items": {
+        "$ref": "#/$defs/ClusterIdentity"
+      },
+      "minItems": 1,
+      "title": "Clusters",
+      "type": "array"
+    },
+    "dataset_id": {
+      "pattern": "^[a-z0-9][a-z0-9._-]+$",
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "dataset_version": {
+      "minLength": 1,
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "independent_unit": {
+      "$ref": "#/$defs/IndependentUnit"
+    },
+    "manifest_version": {
+      "minLength": 1,
+      "title": "Manifest Version",
+      "type": "string"
+    },
+    "portfolio_version": {
+      "minLength": 1,
+      "title": "Portfolio Version",
+      "type": "string"
+    },
+    "rejected_units": {
+      "items": {
+        "$ref": "#/$defs/RejectedUnitRow"
+      },
+      "title": "Rejected Units",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "jepa4d-split-manifest-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_units": {
+      "items": {
+        "$ref": "#/$defs/SelectedUnitRow"
+      },
+      "minItems": 1,
+      "title": "Selected Units",
+      "type": "array"
+    },
+    "selection": {
+      "$ref": "#/$defs/MechanicalSelectionRule"
+    },
+    "source_assets": {
+      "items": {
+        "$ref": "#/$defs/SourceAssetIdentity"
+      },
+      "minItems": 1,
+      "title": "Source Assets",
+      "type": "array"
+    },
+    "split_id": {
+      "pattern": "^[a-z0-9][a-z0-9._-]+$",
+      "title": "Split Id",
+      "type": "string"
+    },
+    "target_isolation": {
+      "$ref": "#/$defs/TargetIsolationAttestation"
+    }
+  },
+  "required": [
+    "schema_version",
+    "manifest_version",
+    "portfolio_version",
+    "dataset_id",
+    "dataset_version",
+    "split_id",
+    "independent_unit",
+    "selection",
+    "target_isolation",
+    "source_assets",
+    "clusters",
+    "selected_units",
+    "rejected_units"
+  ],
+  "title": "SplitManifest",
+  "type": "object"
+}

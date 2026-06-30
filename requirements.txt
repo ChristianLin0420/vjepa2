@@ -4,6 +4,7 @@ tensorboard
 wandb
 iopath
 pyyaml
+cryptography>=42
 numpy
 opencv-python
 submitit
