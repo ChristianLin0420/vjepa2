@@ -209,3 +209,39 @@ terminal content-addressed receipt, not merely a zero exit from inference or a
 preliminary W&B upload. Keep the output directory immutable and use its
 execution, postflight, and terminal receipts when updating the experiment
 record.
+
+## Synthetic Phase 2g training-instrumentation smoke
+
+This is an implementation-only, synthetic CUDA smoke for the M0-M3 training
+and W&B instrumentation path. It consumes no dataset, model, checkpoint, or
+archive input and is not roadmap first-round training, held-out evidence, or a
+promotion result. The current roadmap does not authorize submitting it as a
+Phase 2g experiment; the wrapper is provided for a separately authorized
+engineering check after its complete implementation is committed.
+
+The wrapper is the only supported Slurm entrypoint. It requires a clean
+committed tree, a fresh output, one node/task/GPU for no more than 30 minutes,
+and fewer than eight expanded active tasks before submission. It runs all four
+instrumentation modes in one W&B run with one to ten optimizer steps per mode
+(three by default). Scheduler stdout/stderr and the structured job directory
+are printed as machine-readable `key=value` lines.
+
+W&B authentication must already exist at `$HOME/.netrc`, owned by the user and
+set to mode 0600. The credential is read by W&B from `HOME`; the wrapper never
+accepts, logs, or exports an API key or token. Once separately authorized, the
+non-secret invocation is:
+
+```bash
+chmod 600 "$HOME/.netrc"
+export JEPA4D_WANDB_ENTITY="your-approved-entity"
+export JEPA4D_WANDB_PROJECT=jepa4d-worldmodel
+export JEPA4D_MAX_STEPS=3
+bash slurm/submit_phase2g_training_smoke.sh
+```
+
+Success requires `training_receipt.json`, `steps.jsonl`, all four M0-M3
+checkpoints, `wandb_receipt.json`, and `SUCCESS` in the fresh output, plus a
+separate `SUCCESS` marker in the structured Slurm log directory. GPU telemetry
+is sampled every second. These artifacts prove only that the synthetic
+instrumentation path executed; they do not authorize or stand in for any
+real-data training.
