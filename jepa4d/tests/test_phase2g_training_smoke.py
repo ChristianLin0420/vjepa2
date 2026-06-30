@@ -155,7 +155,7 @@ def test_cli_parser_bounds_max_steps() -> None:
 
 
 def test_nvidia_smi_telemetry_uses_allocated_gpu_uuid(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _index: SimpleNamespace(uuid="GPU-allocated"))
+    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda _index: SimpleNamespace(uuid="allocated"))
 
     def fake_run(command, **kwargs):
         assert "--id=GPU-allocated" in command
@@ -261,6 +261,7 @@ def test_cpu_smoke_persists_complete_safe_contract(tmp_path: Path, one_cpu_threa
 
     assert fake.init_kwargs is not None
     assert fake.init_kwargs["mode"] == "online"
+    assert fake.init_kwargs["reinit"] == "finish_previous"
     assert fake.init_kwargs["config"]["claim_boundary"] == CLAIM_BOUNDARY
     assert fake.init_kwargs["config"]["dataset_or_cache_access"] is False
     assert fake.init_kwargs["config"]["runtime_identity"] == receipt["runtime_identity"]

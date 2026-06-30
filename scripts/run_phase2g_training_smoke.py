@@ -286,6 +286,8 @@ def nvidia_smi_telemetry(device: torch.device) -> dict[str, float]:
     properties = torch.cuda.get_device_properties(index)
     uuid = getattr(properties, "uuid", None)
     selector = None if uuid is None else str(uuid)
+    if selector and not selector.startswith(("GPU-", "MIG-")):
+        selector = f"GPU-{selector}"
     if not selector:
         visible = [value.strip() for value in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if value.strip()]
         if index >= len(visible):
@@ -415,7 +417,7 @@ def run_training_smoke(
             name=settings.wandb_run_name,
             job_type="phase2g-instrumentation-smoke",
             mode="online",
-            reinit=True,
+            reinit="finish_previous",
             config=config,
             tags=["phase-2g", "integration-smoke", "synthetic-only", "training-observability"],
         )
