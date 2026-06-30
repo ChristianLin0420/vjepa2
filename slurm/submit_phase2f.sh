@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 PYTHON="${JEPA4D_PYTHON:-$ROOT/.conda-gpu/bin/python}"
 [[ -x "$PYTHON" ]] || { printf 'missing executable Phase 2f Python: %s\n' "$PYTHON" >&2; exit 2; }
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 [[ -z "$(git status --porcelain --untracked-files=all)" ]] || { printf 'Phase 2f submission requires a clean committed worktree\n' >&2; exit 2; }
 
 ACCOUNT="edgeai_tao-ptm_image-foundation-model-clip"
