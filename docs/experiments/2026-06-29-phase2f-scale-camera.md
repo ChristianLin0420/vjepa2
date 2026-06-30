@@ -345,34 +345,21 @@ data rotations, primary latency estimand, qualification threshold, or selector a
 
 ## Recommended Phase 2g
 
-The next stage should be an **implementation-only latency salvage**, registered before profiling. Do not change the model
-quality hypothesis or open DIODE yet.
+After reviewing the research priority, the next stage should answer the architecture question that Phase 2f left open.
+Speed remains logged but is no longer a pretraining elimination gate.
 
-| Priority | Experiment | Frozen comparison | Promotion criterion |
-|---|---|---|---|
-| P0 | Precompute M2/M3 normalized-K features in the cache or CPU input pipeline. | Exact output parity with current eager camera summary. | Remove the approximately 0.717 ms camera-transform path without changing predictions. |
-| P0 | Compare eager with `torch.compile(fullgraph=True, mode="reduce-overhead")` and explicit CUDA Graph capture. | Identical inputs, weights, output tolerances, warmup, blocks, and 12-allocation resampling unit. | Upper 95% CI passes a newly frozen runtime gate; record compile/capture amortization separately. |
-| P0 | Fuse pooling, scale projection/head, and composition; profile the M3 coarse field separately. | M1 first, then add exact precomputed K, then field. | Identify a minimal qualified arm rather than hiding a slow component in the encoder total. |
-| P1 | Freeze two latency views before results: head-relative and encoder-plus-head/system. | Report both, state which one governs qualification, and include absolute tail latency. | No post-result switching between estimands. |
-| P1 | Only after runtime qualification, run the existing pilot and updated/stale/wrong/permuted-K controls. | Same gradient firewall, rotations, seeds, and selector. | Candidate passes runtime, reload, gradients, and identifiable camera controls before 60-epoch training. |
-| P2 | Open DIODE exactly once only for one selected survivor versus M0. | Existing sealed archive identity and final gate. | Selector authorizes exactly one survivor; otherwise preserve the archive again. |
+The durable plan is [Phase 2g quality-first detached scale and camera conditioning](2026-06-29-phase2g-quality-first-proposal.md):
 
-This direction is consistent with current systems guidance: PyTorch documents `reduce-overhead` mode as using CUDA graphs
-to reduce Python overhead for small batches, while NVIDIA notes that networks made of many small kernels can become
-enqueue-bound and benefit from CUDA Graphs. The modeling direction remains well grounded—Metric3D v2 uses canonical camera
-space, CAM-Convs exposes calibration to the network, UniDepthV2 uses a compact camera representation, and Depth Pro
-jointly estimates depth and focal length—but Phase 2f says the next uncertainty to reduce is execution efficiency, not
-another unprofiled camera architecture.
+1. expand the balanced SUN RGB-D development set and preserve the four camera-family rotations;
+2. run equal health-only learning-rate selection for M0-M3;
+3. train every healthy arm for all four rotations and three seeds;
+4. evaluate raw/aligned geometry, scale, uncertainty, and family consistency;
+5. execute updated/stale/wrong/permuted-K controls for M2/M3 plus a same-checkpoint M3 zero-field intervention;
+6. freeze one development survivor using quality and mechanism gates, or retain M0 if none qualifies;
+7. optimize speed only for that frozen scientific survivor, requiring prediction and metric parity;
+8. consider DIODE only under a later one-shot preregistration. Phase 2g itself keeps it sealed.
 
-Research and implementation references:
-
-- [PyTorch `torch.compile`](https://docs.pytorch.org/docs/2.12/generated/torch.compile.html)
-- [NVIDIA TensorRT performance best practices](https://docs.nvidia.com/deeplearning/tensorrt/latest/performance/optimization.html)
-- [Metric3D v2](https://arxiv.org/abs/2404.15506)
-- [CAM-Convs](https://arxiv.org/abs/1904.02028)
-- [UniDepthV2](https://arxiv.org/abs/2502.20110)
-- [Depth Pro](https://arxiv.org/abs/2410.02073)
-
-The immediate stop condition is simple: if exact precomputation, compilation/capture, and fusion cannot produce a
-candidate that passes the newly frozen implementation screen, retain M0 and redirect effort toward data/supervision rather
-than spending formal-training or external-final budget.
+This revision does not alter Phase 2f's result or frozen gate. It changes the next research question from “can the current
+implementation pass an operational latency screen?” to “does the proposed architecture improve quality and use its
+claimed mechanism?” The [project metric guide](../METRICS.md) defines the exact meanings and cross-phase boundaries for
+the resulting measurements.

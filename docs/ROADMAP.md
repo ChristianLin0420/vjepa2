@@ -4,7 +4,9 @@
 
 Advance only when the previous phase passes unit, integration, artifact, and documentation gates. A new model integration
 does not compensate for unstable contracts. Mocks remain available at every heavy boundary so CI stays offline and CPU
-runnable.
+runnable. Future quality work follows the [systematic validation plan](VALIDATION_PLAN.md) and its
+[stage-specific dataset/TODO plans](validation/README.md); historical completion statements below retain their original
+claim boundaries.
 
 ## Phase 0 — repository and contracts: complete
 
@@ -70,9 +72,43 @@ latency is 1.1655× final-only, above the frozen 1.10× threshold. It is therefo
 0.41054 and RGB reaches 0.40425, while V-JEPA and VGGT retain much better aligned geometry than RGB. The evidence points
 to unseen-camera metric-scale transfer, not only representation shape, as the next geometry target.
 
-Next gate: evaluate RGB, final, fixed, and learned variants on fresh rotated camera-family or external sequences; add a
-preregistered randomized/interleaved latency confirmation and scale-aware modeling without reusing Freiburg-3 as fresh
-confirmation data.
+Historical next gate, subsequently addressed by Phases 2d-2f: evaluate RGB, final, fixed, and learned variants on fresh
+rotated camera-family or external sequences; add a preregistered randomized/interleaved latency confirmation and
+scale-aware modeling without reusing Freiburg-3 as fresh confirmation data.
+
+## Phase 2d — fusion, scale, and latency diagnostics: complete
+
+Same-checkpoint interventions showed that zeroing the learned fusion gates changes raw AbsRel by only `0.000081`, while a
+target-fitted per-image scale oracle reduces raw AbsRel by `61.61%`. Twelve independent A100 jobs measured learned/final
+latency at `1.02262x` with a tight paired interval. The evidence rejects a learned-gate causal explanation and identifies
+metric-scale transfer as the dominant modeling gap. Scale-oracle results remain target-fitted diagnostics, not deployable
+performance.
+
+## Phase 2e — factorized SUN RGB-D sensor transfer: complete, not promoted
+
+Eight variants across three seeds completed under a sensor-blocked protocol. The fixed candidate improves held-out raw and
+aligned AbsRel by `2.67%` and `6.22%`, but worsens absolute log-scale error by `13.82%`, worsens calibrated NLL, and reaches
+`9.3578x` baseline head latency. Its shuffled-K control is vacuous because the held-out kv2 split contains one repeated K.
+The candidate is not promoted; the opened Phase 2e kv2 set is development-only for future work.
+
+## Phase 2f — detached scale/camera latency-first screen: complete, no survivor
+
+The four-arm preregistration, 12 independent A100 latency replicas, 12 M0 camera-family training runs, guarded DIODE final,
+and strict 73-task postflight completed. M1/M2/M3 fail the frozen head-latency gate at
+`1.681x/3.606x/4.362x`; only M0 trains. This is an implementation/runtime rejection, not candidate-quality evidence.
+Selector output is no survivor, and DIODE remains sealed. The graph used 12 base submissions and never exceeded eight
+concurrent running allocations.
+
+## Phase 2g — quality-first detached scale and camera conditioning: proposed
+
+The revised next gate trains and evaluates every healthy M0-M3 arm before speed becomes a hard decision. It expands the
+balanced SUN RGB-D development protocol, uses equal health-only hyperparameter selection, executes all four rotations and
+three seeds, evaluates updated/stale/wrong/permuted-K and zero-field interventions, and selects only on frozen quality and
+mechanism criteria. Efficiency remains a mandatory descriptive diagnostic. A later experiment optimizes only a frozen
+quality survivor with prediction/metric parity; external confirmation remains separately preregistered and DIODE stays
+sealed throughout Phase 2g. See the [full proposal](experiments/2026-06-29-phase2g-quality-first-proposal.md) and
+[metric guide](METRICS.md). It is the geometry-stage proposal, not blanket authorization or the project-wide first task;
+the shared validation registry, dataset-role audit, and Phase-2 prerequisites must be frozen first.
 
 ## Phase 3 — object slots and grounding: initial substrate complete
 

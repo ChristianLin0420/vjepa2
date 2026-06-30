@@ -5,7 +5,12 @@ do not treat an integration run as benchmark evidence. Detailed records contain 
 W&B panel guide, limitations, and next decision.
 
 The living cross-phase synthesis is [INSIGHTS.md](INSIGHTS.md). It records conclusions, rejected shortcuts, and the next
-gate without duplicating every numerical result.
+gate without duplicating every numerical result. Use the [project metric guide](../METRICS.md) for formulas, aggregation,
+calibration, direction, cross-phase compatibility, and claim boundaries.
+
+Future experiments are organized by the [systematic validation plan](../VALIDATION_PLAN.md) and the maintained
+[stage plans](../validation/README.md). Those documents are plans, not promoted evidence; this index remains the ledger of
+results that actually ran.
 
 ## Evidence map
 
@@ -17,12 +22,17 @@ gate without duplicating every numerical result.
 | 2c · cross-family geometry | [Cross-sequence learned fusion](2026-06-29-phase2c-cross-sequence.md) | [mfquwgbw](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/mfquwgbw) | sequence-level | Learned fusion improves final-layer macro AbsRel by 4.58% on both Freiburg-3 sequence means, but reaches 1.1655× final latency; fixed averaging and RGB are stronger raw-metric baselines. | Retain final by the frozen gate; target scale transfer, fresh camera families, and a separately registered latency confirmation. |
 | 2d · causal diagnostics | [Fusion, scale, and latency audit](2026-06-29-phase2d-diagnostics.md) | [q1m52wi1](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/q1m52wi1) | sequence-level | Zeroing the learned residual gates changes raw AbsRel by only `0.000081`; a target-fitted per-image scalar oracle cuts raw AbsRel by `61.61%`; independently repeated learned/final latency is `1.02262×` (95% CI `[1.02196, 1.02332]`). | Stop attributing Phase 2c behavior to the learned gates, retain final-layer operationally, and make metric-scale transfer the next modeling target. |
 | 2e · fresh sensor family | [SUNRGBD factorized geometry](2026-06-29-phase2e-sunrgbd.md) | [89ugevtp](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/89ugevtp) | benchmark | On untouched kv2, the registered candidate improves raw/aligned AbsRel by `2.67%/6.22%`, but scale error is `13.82%` worse, calibrated NLL is worse, and head latency is `9.3578×`; the operational gate fails. | Do not promote the candidate. Repair camera controls, detach scale learning from shape, and qualify component latency before another formal run. |
-| 2f · detached scale/camera | [Latency-first detached-scale screen](2026-06-29-phase2f-scale-camera.md) | [c5c5z4v3](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/c5c5z4v3) | benchmark (development-only) | All arms pass the parameter cap, but M1/M2/M3 reach `1.681×/3.606×/4.362×` baseline head latency versus the frozen `1.10×` gate. Only M0 trains; no enhanced arm survives, and DIODE stays sealed. The 73-task Slurm graph passes strict integrity with at most eight concurrent allocations. | Retain M0. Optimize/fuse the candidate implementations under a newly frozen latency protocol before spending another formal-training or final-test budget. |
+| 2f · detached scale/camera | [Latency-first detached-scale screen](2026-06-29-phase2f-scale-camera.md) | [c5c5z4v3](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/c5c5z4v3) | benchmark (development-only) | All arms pass the parameter cap, but M1/M2/M3 reach `1.681×/3.606×/4.362×` baseline head latency versus the frozen `1.10×` gate. Only M0 trains; no enhanced arm survives, and DIODE stays sealed. The 73-task Slurm graph passes strict integrity with at most eight concurrent allocations. | Retain M0 operationally, but train M1-M3 under a new quality-first protocol because Phase 2f did not test their scientific performance; optimize speed only after selecting a quality survivor. |
 | 3 · grounding | [Object grounding](2026-06-29-phase3-object-grounding.md) | [wvljbqlv](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/wvljbqlv) | integration | Real V-JEPA + VGGT + GroundingDINO completes with stagewise observability and persistence. | Optimize geometry latency and test association separately. |
 | 4 · memory | [Persistent 4D memory](2026-06-29-phase4-memory.md) | [fa9r6n1c](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/fa9r6n1c) | contract-only | Incremental history, occlusion, SQLite reload, event replay, queries, and LOD compression agree. | Move from fixture observations to real sequence updates. |
 | 4D identity | [Identity ablation](2026-06-29-identity-ablation.md) | [fw4rj25e](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/fw4rj25e) | sequence-level | V-JEPA appearance beats RGB appearance on DAVIS `dogs-scale`, but IoU remains stronger. | Learn/project appearance features; retain geometry/IoU fusion. |
 | 5 · planning | [Verified recovery](2026-06-29-phase5-planning.md) | [8kctk4mt](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/8kctk4mt) | contract-only | Explicit evidence, safe uncertainty rejection, failure attribution, and bounded recovery pass; real V-JEPA→CEM handoff ran on A100 before it became unavailable. | Integrate learned dynamics and a named simulator. |
 | 6 · benchmarking | [Versioned benchmark harness](2026-06-29-phase6-benchmark-harness.md) | [63j8m3cp](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/63j8m3cp) | contract-only | Six stages × five repetitions produce validated manifests, bootstrap intervals, typed failures, and JSON/HTML/Markdown/W&B artifacts. | Add one official licensed mini subset per stage. |
+
+The geometry-specific proposed gate is
+[Phase 2g quality-first detached scale and camera conditioning](2026-06-29-phase2g-quality-first-proposal.md). It is a
+plan, not promoted evidence or authorization to submit jobs. Project-wide execution begins with Wave A of the
+[validation plan](../VALIDATION_PLAN.md), after which independent adapter/data work can proceed in parallel.
 
 ## Evidence levels
 
@@ -38,8 +48,9 @@ gate without duplicating every numerical result.
 ## Reading order
 
 1. Start with the key result and decision in the table above.
-2. Open the phase record and use its W&B dashboard guide to understand each panel rather than reading charts in isolation.
-3. Check the claim boundary before comparing runs.
-4. Follow artifact paths for machine-readable values; W&B is the comparison surface, not the sole source of record.
+2. Check the [metric guide](../METRICS.md) before comparing similarly named values across phases.
+3. Open the phase record and use its W&B dashboard guide to understand each panel rather than reading charts in isolation.
+4. Check the claim boundary before comparing runs.
+5. Follow artifact paths for machine-readable values; W&B is the comparison surface, not the sole source of record.
 
 New stages add a row without changing prior records. Use [TEMPLATE.md](TEMPLATE.md) for every promoted experiment.

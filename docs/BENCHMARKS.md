@@ -1,5 +1,14 @@
 # JEPA-4D benchmark specification
 
+The project-wide dataset portfolio, common S0-S10 experiment lifecycle, promotion levels, execution waves, and maintained
+stage TODOs are in [VALIDATION_PLAN.md](VALIDATION_PLAN.md) and [validation/README.md](validation/README.md). This file
+describes the benchmark interfaces and intended measurements; where a broad example here differs from a frozen stage
+plan, follow the authority order in the validation index.
+
+Use [METRICS.md](METRICS.md) as the common metric dictionary. It records implemented formulas, units, direction,
+alignment/calibration policy, aggregation, cross-phase incompatibilities, and claim boundaries. This specification defines
+which benchmarks should emit those quantities; experiment preregistrations freeze the exact subset and decision rule.
+
 ## Identity association benchmark
 
 The tracking layer now includes a deterministic two-instance crossing/occlusion fixture and a loader for labeled DAVIS
