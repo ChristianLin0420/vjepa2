@@ -308,10 +308,11 @@ SHA-256 identities locally. Raw RGB/depth, protected archives, credentials, and 
 
 ### B. Protocol implementation
 
-- [x] Exercise the M0-M3 optimizer, zero-tolerance gradient firewall, checkpoint reload, allocated-GPU telemetry, and
-  online W&B with generated tensors only. The
-  [2026-06-30 instrumentation smoke](../experiments/2026-06-30-phase2g-training-instrumentation-smoke.md) is
-  `contract-only`; it clears no real-data, quality, legal, split, or preregistration gate.
+- [x] Exercise the M0-M3 optimizer, zero-tolerance gradient firewall, checkpoint reload, allocated-GPU telemetry, online
+  W&B, independent backend download/hash verification, and content-addressed terminal publication with generated tensors
+  only. The [2026-06-30 governed instrumentation smoke](../experiments/2026-06-30-phase2g-training-instrumentation-smoke.md)
+  passed as job `29672691` with terminal identity `9a328e96...cd5f`. It is `contract-only` and clears no real-data, quality,
+  legal, split, or preregistration gate.
 - [ ] Implement the expanded sharded SUN cache and target-separation audit.
 - [ ] Add raw/aligned RMSE, Delta metrics, reliability error, scale correlation, and per-frame persistence under a new
   metric schema.

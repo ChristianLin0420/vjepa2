@@ -13,8 +13,10 @@ artifact tasks in the [systematic validation plan](../VALIDATION_PLAN.md).
 A separately authorized, synthetic no-data instrumentation smoke completed on 2026-06-30. It exercised three optimizer
 steps for each M0-M3 arm, the zero-tolerance gradient firewall, checkpoint reload, allocated-GPU telemetry, local receipts,
 and online W&B. The first attempt, job `29662324` at commit `062b975`, failed on bare-UUID `nvidia-smi` selection; commit
-`dff5f6a` fixed and tested the selector, and replacement job `29662431` completed. The append-only result is
-[Phase 2g synthetic training-instrumentation smoke](2026-06-30-phase2g-training-instrumentation-smoke.md).
+`dff5f6a` fixed and tested the selector, and v1 job `29662431` completed. Governed v2 at commit `11bef3c` then completed as
+job `29672691` / W&B run `qsoqhk22`, adding exact allocation validation, independent backend artifact download/hash
+verification, terminal W&B publication, and content-addressed terminal identity `9a328e96...cd5f`. The append-only result is
+[Phase 2g governed synthetic training-instrumentation smoke](2026-06-30-phase2g-training-instrumentation-smoke.md).
 
 This preflight used generated tensors and no dataset, cache, archive, pretrained model, or checkpoint input. Its raw
 receipt label is `integration-smoke`; the experiment ledger maps it to the canonical `contract-only` evidence level. It is
@@ -421,8 +423,8 @@ should a separate one-shot DIODE confirmation be considered.
 
 ## 16. Items to freeze before preregistration
 
-The synthetic instrumentation preflight closes only the bounded optimizer/firewall/checkpoint/logging wiring check. Every
-scientific and governance item below remains open:
+The governed synthetic instrumentation preflight closes only the bounded optimizer/firewall/checkpoint/logging and
+terminal-evidence wiring checks. Every scientific and data-governance item below remains open:
 
 - applicable validation-registry and consumed-test-ledger entries from the master plan;
 - selected 1,024-sample family manifests and hashes;
@@ -434,7 +436,7 @@ scientific and governance item below remains open:
 - fixed qualitative IDs and visualization schema;
 - exact clean execution commit and environment lock;
 - strict DIODE path-denial and opacity assertions;
-- online W&B artifact schemas and terminal postflight checks.
+- adapt the governed online-W&B and terminal-postflight schemas to the formal cache/training/evaluation DAG.
 
 Until these items are frozen and reviewed, this document remains a proposal: no Phase 2g-A data, cache, tuning, formal
 training, held-out evaluation, selection, or external job may be submitted. A synthetic engineering preflight is not an
