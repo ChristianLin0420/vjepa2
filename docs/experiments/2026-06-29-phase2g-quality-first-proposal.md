@@ -8,6 +8,19 @@ This is the geometry-stage proposal under the [Phase 2 validation plan](../valid
 project-wide experiment plan. Before preregistration, complete the applicable Wave-A registry, dataset-role, metric, and
 artifact tasks in the [systematic validation plan](../VALIDATION_PLAN.md).
 
+### Engineering preflight completed outside Phase 2g-A
+
+A separately authorized, synthetic no-data instrumentation smoke completed on 2026-06-30. It exercised three optimizer
+steps for each M0-M3 arm, the zero-tolerance gradient firewall, checkpoint reload, allocated-GPU telemetry, local receipts,
+and online W&B. The first attempt, job `29662324` at commit `062b975`, failed on bare-UUID `nvidia-smi` selection; commit
+`dff5f6a` fixed and tested the selector, and replacement job `29662431` completed. The append-only result is
+[Phase 2g synthetic training-instrumentation smoke](2026-06-30-phase2g-training-instrumentation-smoke.md).
+
+This preflight used generated tensors and no dataset, cache, archive, pretrained model, or checkpoint input. Its raw
+receipt label is `integration-smoke`; the experiment ledger maps it to the canonical `contract-only` evidence level. It is
+not part of the Phase 2g-A scientific DAG, does not answer H1-H5, clears none of the data/legal/preregistration items below,
+and does not authorize real-data training or DIODE access.
+
 This plan records the revised research priority after Phase 2f. Phase 2f remains an honest latency-first result: its
 current eager M1-M3 implementations failed the frozen head-runtime gate and therefore were not trained. It does not answer
 whether those architectures improve geometry, metric scale, camera causality, or uncertainty.
@@ -408,6 +421,9 @@ should a separate one-shot DIODE confirmation be considered.
 
 ## 16. Items to freeze before preregistration
 
+The synthetic instrumentation preflight closes only the bounded optimizer/firewall/checkpoint/logging wiring check. Every
+scientific and governance item below remains open:
+
 - applicable validation-registry and consumed-test-ledger entries from the master plan;
 - selected 1,024-sample family manifests and hashes;
 - cache shard schema, expected sizes, and source identities;
@@ -420,4 +436,6 @@ should a separate one-shot DIODE confirmation be considered.
 - strict DIODE path-denial and opacity assertions;
 - online W&B artifact schemas and terminal postflight checks.
 
-Until these items are frozen and reviewed, this document is a proposal and no Phase 2g job should be submitted.
+Until these items are frozen and reviewed, this document remains a proposal: no Phase 2g-A data, cache, tuning, formal
+training, held-out evaluation, selection, or external job may be submitted. A synthetic engineering preflight is not an
+exception to, substitute for, or partial execution of that scientific DAG.

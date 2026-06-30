@@ -15,6 +15,7 @@ result changes a design decision; do not copy every scalar into it.
 | Fusion diagnostics | Same-checkpoint interventions, target-fitted scale oracles, and 12 independent A100 latency jobs | Original and zeroed learned gates differ by only `0.000081` raw AbsRel. A per-image scalar oracle reduces raw AbsRel from `0.41801` to `0.16046`; learned/final latency is tightly `1.02262×`. Camera correction provenance remains incomplete. | Reject a learned-gate causal explanation and keep Phase 2c's final-layer decision unchanged. | Treat scale recovery as a separate estimand and complete camera provenance before causal camera claims. |
 | Factorized sensor transfer | Eight variants × three seeds on sensor-blocked SUNRGBD, with untouched kv2 final evaluation | The candidate improves raw/aligned AbsRel by `2.67%/6.22%` but worsens scale error by `13.82%`, calibrated NLL by `0.0675`, and head latency to `9.3578×`. Correct and shuffled `K` are identical because all kv2 samples share one intrinsic matrix. | Execution succeeds but promotion fails; do not continue `factorized_full_teacher` unchanged. | [Phase 2f proposal](2026-06-29-phase2f-scale-camera-proposal.md): detached scale, identifiable camera controls, latency-first screening, and a fresh final set. |
 | Detached scale/camera screen | Preregistered four-arm development protocol, 12 interleaved A100 latency allocations, and 12 M0 camera-family rotations | M1/M2/M3 pass the parameter cap but fail the frozen head-latency gate at `1.681×/3.606×/4.362×`; only M0 proceeds to training. Its development mean is `0.20208` raw AbsRel, `0.14682` aligned AbsRel, and `0.11888` scale error. No enhanced arm is eligible, so no external-final comparison is opened. | Keep M0 as the operational baseline. This is an implementation/runtime rejection, not evidence that detached scale or camera conditioning cannot improve quality. | [Phase 2g quality-first proposal](2026-06-29-phase2g-quality-first-proposal.md): train and causally evaluate every healthy arm, record efficiency descriptively, then optimize only a frozen quality survivor. |
+| Phase 2g instrumentation preflight | One synthetic M0-M3 A100 allocation with local receipts and online W&B | All four arms complete 12/12 optimizer steps with zero forbidden-gradient leakage and four exact checkpoint reloads; a failed GPU-UUID attempt was fixed and superseded. This is `contract-only` evidence, not architecture-quality evidence. | The bounded training instrumentation works, but the formal pipeline still needs an independent terminal postflight and stronger local/W&B receipt binding. | Finish Phase 2g data governance, manifests, preregistration, and postflight hardening before authorizing Phase 2g-A. |
 | Grounding | Real GroundingDINO integration | Teacher detections can become slots with JEPA and geometry evidence. Bootstrap association is not durable identity. | Preserve explicit evidence and verification boundaries. | SAM2 plus labeled detection/segmentation/tracking evaluation. |
 | Identity | DAVIS sequence-level ablation | V-JEPA appearance beats RGB appearance, but IoU-only remains stronger than current fusion. | Learn mask-weighted projections and motion-aware assignment; retain IoU. | Multiple sequences, occlusion strata, global assignment. |
 | Memory | Deterministic persistence lifecycle | Snapshot reload, event replay, histories, queries, and LOD agree on controlled updates. | Keep atomic records plus append-only events. | Long-duration real sequences, concurrency, and task-retention curves. |
@@ -32,8 +33,10 @@ showed that the learned fusion gates were not the cause of the observed behavior
 overhead is small. Phase 2e showed that explicit factorization can improve held-out shape/raw error, but the current scale
 head, camera control, and dense-ray implementation are not promotable. Phase 2f then rejected all three enhanced arms at
 the preregistered head-latency gate before formal training; consequently it provides no enhanced-arm quality or camera-
-causality result, and the fresh DIODE final set remains sealed. Phases 3–6 have useful initial substrates and real integration
-evidence where noted, but are not model-quality or production complete.
+causality result, and the fresh DIODE final set remains sealed. A later synthetic Phase 2g instrumentation preflight proved
+the M0-M3 optimizer, gradient-firewall, checkpoint, GPU-telemetry, and online-W&B wiring, but used no dataset or pretrained
+model and clears no Phase 2g-A scientific gate. Phases 3–6 have useful initial substrates and real integration evidence
+where noted, but are not model-quality or production complete.
 
 The dominant scientific gaps are no longer interface construction. They are identifiable and efficient metric-scale/camera
 modeling, calibrated geometry/object uncertainty, identity under occlusion, long-duration memory quality, trained
@@ -50,9 +53,10 @@ order. Plans do not overwrite the evidence above.
    and the two composed-system environments. These are loader/integration tasks until labeled baselines run.
 3. Run Dataset-A reference baselines and health pilots stage by stage. No learned stage advances to formal training without
    a valid baseline, complete metric sanity checks, and a frozen claim boundary.
-4. For geometry, preregister
+4. For geometry, the synthetic instrumentation preflight is complete. Preregister
    [Phase 2g-A quality-first architecture validation](2026-06-29-phase2g-quality-first-proposal.md) only after the shared
-   foundation and Phase-2-specific prerequisites pass. Train M0-M3 fairly; efficiency is descriptive during selection.
+   foundation, Phase-2-specific prerequisites, and strict terminal postflight pass. Train M0-M3 fairly; efficiency is
+   descriptive during selection.
 5. If Phase 2g-A identifies a development survivor, optimize only that frozen architecture under prediction/metric parity,
    then consider one separately preregistered DIODE confirmation. Otherwise retain M0 and keep DIODE sealed.
 6. Promote each remaining stage from Dataset A to its frozen Dataset B only after a development survivor exists; then
@@ -108,6 +112,8 @@ order. Plans do not overwrite the evidence above.
     never exceeded eight concurrent allocations, and records four same-ID operator requeues caused by nested-step stalls.
 22. Architecture discovery and deployment optimization answer different questions. Train and compare healthy candidates
     for quality and causal mechanism first; only then make runtime a hard gate for the frozen scientific survivor.
+23. A synthetic optimizer smoke validates wiring, not architecture quality or formal-training readiness. Promotion-grade
+    evidence also needs an independently validated terminal receipt that binds the local and online artifact identities.
 
 ## Rejected shortcuts
 
@@ -124,3 +130,4 @@ order. Plans do not overwrite the evidence above.
 - Do not claim an enhanced architecture or camera-conditioning hypothesis failed when its formal training was skipped.
 - Do not open a reserved final set merely to produce a number after the selector returns no survivor.
 - Do not use an implementation-speed rejection as a substitute for evaluating an unresolved architecture-quality hypothesis.
+- Do not treat a synthetic optimizer/W&B smoke as authorization for a governed real-data training DAG.

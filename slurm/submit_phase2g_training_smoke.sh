@@ -77,10 +77,9 @@ SCHEDULER_USER="$(id -un)" || die "unable to determine the authenticated schedul
 [[ -n "$SCHEDULER_USER" ]] || die "authenticated scheduler user is empty"
 LOCK_ROOT="$JOB_HOME/.cache/jepa4d"
 mkdir -p "$LOCK_ROOT"
-exec 9>"$LOCK_ROOT/phase2g-training-smoke-submit.lock"
+exec 9>"$LOCK_ROOT/slurm-submit.lock"
 flock -x 9 || die "unable to acquire the atomic Slurm submission guard"
-ACTIVE_STATES="PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED"
-if ! active_raw="$(squeue -r -h -u "$SCHEDULER_USER" -t "$ACTIVE_STATES" -o "%i")"; then
+if ! active_raw="$(squeue -r -h -u "$SCHEDULER_USER" -o "%i")"; then
   die "unable to query active jobs; refusing submission"
 fi
 mapfile -t active_job_tasks < <(printf '%s\n' "$active_raw" | awk 'NF {print $1}' | sort -u)

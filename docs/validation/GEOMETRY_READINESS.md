@@ -28,6 +28,11 @@ or target.
 Every gate has `execution_ready: false` and `pack_authorizes_data_access: false`. The pack itself never grants access. The
 separate runtime controller may authorize the exact ledger-permitted consumed Phase 2b regression; that exception is an
 integration/regression diagnostic only and does not make the portfolio or a scientific-promotion gate execution-ready.
+The first real invocation completed as Slurm job `29662550` and [W&B run
+`b7yzbpfo`](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/b7yzbpfo), with terminal content address
+`f575762f4c4a24b9cae968d543042fe33d5d074920e0974fd6f2f3a9286d1d32`. That ignored local receipt is recorded in the
+[experiment ledger](../experiments/2026-06-30-wave-a-geometry-official-mini.md) but remains deliberately unbound from this
+metadata-only clean-clone pack.
 
 ## Runtime implementation binding
 
@@ -104,8 +109,8 @@ Validation fails closed when:
 
 ## Next migration order
 
-1. Commit and test the governed Phase 2b smoke, obtain its first terminal Slurm/online-W&B/postflight receipt, then promote
-   target-free per-split Phase 2b and Phase 2c Wave A manifests and add equivalent Phase 2c runtime coverage.
+1. With the first terminal Phase 2b Slurm/online-W&B/postflight receipt now recorded, promote target-free per-split Phase
+   2b and Phase 2c Wave A manifests and add equivalent Phase 2c runtime coverage.
 2. Complete SUN constituent-license review, then implement an identity-only selector that cannot receive depth paths.
 3. Promote portable SUN Phase 2e and Phase 2f membership artifacts; keep target validation in a separately authorized path.
 4. Freeze the Phase 2 scientific preregistration and complete all SUN development gates.

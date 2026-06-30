@@ -2,7 +2,8 @@
 
 ## Status
 
-**Foundation code implemented and Phase 2 metadata audit recorded; portfolio expansion remains in progress.**
+**Foundation code implemented, Phase 2 metadata audited, and the first governed official smoke recorded; portfolio
+expansion remains in progress.**
 
 Wave A started from pushed commit `21af2f3`. This implementation adds the fail-closed machinery required before dataset
 downloads, adapter qualification, or formal GPU experiments. It does not authorize training, open a held-out target, or
@@ -108,10 +109,12 @@ The following counts describe pushed commit `2d43ff9`, not the current post-Wave
   targets, and all other formal runners still need migration.
 - [ ] Provision a security-reviewed selector signing authority and trusted externally append-only event store; keep DIODE
   sealed until both are represented by a new hash-bound ledger/registry version.
-- [ ] Record the first terminal Slurm + online-W&B + strict-postflight receipt for the hash-bound, test-covered Phase 2b
-  official smoke.
-  The aggregate-only publisher and content-addressed dashboard are implemented, but mocked upload tests are not execution
-  evidence.
+- [x] Record the first terminal Slurm + online-W&B + strict-postflight receipt for the hash-bound, test-covered Phase 2b
+  official smoke. Job `29662550`, [W&B run `b7yzbpfo`](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/b7yzbpfo),
+  and terminal content address `f575762f4c4a24b9cae968d543042fe33d5d074920e0974fd6f2f3a9286d1d32` passed; see the
+  [immutable experiment record](../experiments/2026-06-30-wave-a-geometry-official-mini.md). The readiness pack still
+  deliberately records this terminal execution as `not-bound`; the ignored local receipt is evidence, not portable
+  clean-clone metadata.
 - [ ] Add automated credential, restricted-path, raw-target, and unsafe sample-identifier scans to formal
   preflight/postflight; the current clean repository scan is point-in-time evidence only.
 - [ ] Keep raw sample-ID artifact disclosure disabled unless a future design verifies signed, policy-bound authority and

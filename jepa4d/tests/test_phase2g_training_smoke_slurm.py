@@ -167,8 +167,9 @@ def test_submitter_has_clean_fresh_safe_and_fail_closed_gates() -> None:
     assert "execution, W&B run, and Slurm job names must be distinct" in source
     assert "reject_sensitive_identifier JEPA4D_JOB_NAME" in source
     assert '[[ "$MAX_STEPS" =~ ^([1-9]|10)$ ]]' in source
-    assert 'ACTIVE_STATES="PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED"' in source
-    assert 'squeue -r -h -u "$SCHEDULER_USER" -t "$ACTIVE_STATES" -o "%i"' in source
+    assert 'exec 9>"$LOCK_ROOT/slurm-submit.lock"' in source
+    assert 'squeue -r -h -u "$SCHEDULER_USER" -o "%i"' in source
+    assert "ACTIVE_STATES" not in source
     assert "sort -u" in source
     assert "${#active_job_tasks[@]} >= 8" in source
     assert "flock -x 9" in source

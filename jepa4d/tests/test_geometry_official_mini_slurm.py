@@ -124,11 +124,12 @@ def test_submitter_has_clean_fresh_unique_and_fail_closed_scheduler_gates() -> N
     assert '[[ ! -e "$STAGE_OUTPUT" ]]' in source
     assert '[[ -f "$ARCHIVE" ]]' not in source
     assert "JEPA4D_TUM_DATASET_ROOT" not in source
-    assert 'ACTIVE_STATES="PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED"' in source
     assert 'SCHEDULER_USER="$(id -un)"' in source
     assert 'LOCK_ROOT="$JOB_HOME/.cache/jepa4d"' in source
+    assert 'exec 9>"$LOCK_ROOT/slurm-submit.lock"' in source
     assert "XDG_RUNTIME_DIR" not in source
-    assert 'squeue -r -h -u "$SCHEDULER_USER" -t "$ACTIVE_STATES" -o "%i"' in source
+    assert 'squeue -r -h -u "$SCHEDULER_USER" -o "%i"' in source
+    assert "ACTIVE_STATES" not in source
     assert "flock -x 9" in source
     assert "sort -u" in source
     assert "${#active_job_tasks[@]} >= 8" in source
