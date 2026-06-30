@@ -18,6 +18,7 @@ from scripts.write_phase2f_dependency_graph import (
 from slurm.phase2f_asset_audit import audit_assets
 from slurm.phase2f_contract import reject_secrets
 from slurm.phase2f_final_guard import assert_registry_clear
+from slurm.phase2f_postflight import _verify_hash_identities
 
 ROOT = Path(__file__).resolve().parents[2]
 SBATCH_FILES = sorted((ROOT / "slurm").glob("phase2f_*.sbatch"))
@@ -184,3 +185,104 @@ def test_final_open_registry_blocks_same_preregistration(tmp_path: Path) -> None
 def test_provenance_rejects_credential_like_fields() -> None:
     with pytest.raises(ValueError, match="credential-like"):
         reject_secrets({"execution_id": "x", "wandb_api_key": "forbidden"})
+
+
+def test_postflight_distinguishes_wandb_snapshots_from_current_local_hashes(tmp_path: Path) -> None:
+    canonical = tmp_path / "canonical.bin"
+    canonical.write_bytes(b"current canonical bytes")
+    uploaded_receipt = tmp_path / "parent-receipt.json"
+    uploaded_receipt.write_text('{"status":"finalized-after-upload"}\n', encoding="utf-8")
+    outer_receipt = tmp_path / "child-receipt.json"
+    outer_receipt.write_text("{}\n", encoding="utf-8")
+    receipt = {
+        "canonical": {
+            "path": str(canonical),
+            "bytes": canonical.stat().st_size,
+            "sha256": hashlib.sha256(canonical.read_bytes()).hexdigest(),
+        },
+        "parent": {
+            "receipt": {
+                "path": str(uploaded_receipt),
+                "bytes": uploaded_receipt.stat().st_size,
+                "sha256": hashlib.sha256(uploaded_receipt.read_bytes()).hexdigest(),
+            },
+            "wandb": {
+                "schema_version": "jepa4d-phase2f-wandb-artifact-receipt-v1",
+                "files": [
+                    {
+                        "path": str(uploaded_receipt),
+                        "bytes": 3,
+                        "sha256": hashlib.sha256(b"old").hexdigest(),
+                    }
+                ],
+            },
+        },
+    }
+    assert _verify_hash_identities(receipt, outer_receipt) == 2
+
+    uploaded_receipt.write_text('{"status":"tampered"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="postflight file hash mismatch"):
+        _verify_hash_identities(receipt, outer_receipt)
+
+
+def test_postflight_still_verifies_wandb_only_artifacts(tmp_path: Path) -> None:
+    artifact = tmp_path / "report.html"
+    artifact.write_text("original report\n", encoding="utf-8")
+    outer_receipt = tmp_path / "receipt.json"
+    outer_receipt.write_text("{}\n", encoding="utf-8")
+    receipt = {
+        "wandb": {
+            "schema_version": "jepa4d-phase2f-wandb-artifact-receipt-v1",
+            "files": [
+                {
+                    "path": str(artifact),
+                    "bytes": artifact.stat().st_size,
+                    "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                }
+            ],
+        }
+    }
+    assert _verify_hash_identities(receipt, outer_receipt) == 1
+
+    artifact.write_text("tampered report\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="postflight file hash mismatch"):
+        _verify_hash_identities(receipt, outer_receipt)
+
+
+def test_postflight_does_not_exempt_unscoped_files_lists(tmp_path: Path) -> None:
+    artifact = tmp_path / "array.npz"
+    artifact.write_bytes(b"current")
+    outer_receipt = tmp_path / "receipt.json"
+    outer_receipt.write_text("{}\n", encoding="utf-8")
+    receipt = {
+        "not_wandb": {
+            "files": [
+                {
+                    "path": str(artifact),
+                    "bytes": artifact.stat().st_size,
+                    "sha256": hashlib.sha256(b"stale").hexdigest(),
+                }
+            ]
+        }
+    }
+    with pytest.raises(ValueError, match="postflight file hash mismatch"):
+        _verify_hash_identities(receipt, outer_receipt)
+
+
+def test_postflight_hash_memo_does_not_hide_conflicting_identity(tmp_path: Path) -> None:
+    artifact = tmp_path / "checkpoint.pt"
+    artifact.write_bytes(b"checkpoint")
+    outer_receipt = tmp_path / "receipt.json"
+    outer_receipt.write_text("{}\n", encoding="utf-8")
+    identity = {
+        "path": str(artifact),
+        "bytes": artifact.stat().st_size,
+        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+    }
+    memo: set[tuple[str, str, int | None]] = set()
+    assert _verify_hash_identities({"checkpoint": identity}, outer_receipt, memo) == 1
+    assert _verify_hash_identities({"checkpoint": identity}, outer_receipt, memo) == 1
+
+    identity["sha256"] = hashlib.sha256(b"wrong checkpoint").hexdigest()
+    with pytest.raises(ValueError, match="postflight file hash mismatch"):
+        _verify_hash_identities({"checkpoint": identity}, outer_receipt, memo)

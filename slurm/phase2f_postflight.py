@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw
 
 from jepa4d.evaluation.phase2f_metrics import publish_online_wandb, self_contained_html
 from slurm.phase2f_contract import (
+    WANDB_SCHEMA,
     atomic_json,
     load_graph,
     load_json,
@@ -29,33 +30,62 @@ from slurm.phase2f_final_guard import FINAL_SCHEMA, SENTINEL_SCHEMA, validate_as
 SCHEMA = "jepa4d-phase2f-strict-postflight-v1"
 
 
-def _walk_identities(value: Any) -> list[Mapping[str, Any]]:
-    found: list[Mapping[str, Any]] = []
+Identity = tuple[Mapping[str, Any], bool]
+VerifiedIdentity = tuple[str, str, int | None]
+
+
+def _walk_identities(value: Any, *, wandb_snapshot: bool = False) -> list[Identity]:
+    found: list[Identity] = []
     if isinstance(value, Mapping):
         if isinstance(value.get("path"), str) and isinstance(value.get("sha256"), str):
-            found.append(value)
-        for child in value.values():
-            found.extend(_walk_identities(child))
+            found.append((value, wandb_snapshot))
+        for key, child in value.items():
+            # A receipt is uploaded before its returned W&B identity can be embedded
+            # in the final local receipt.  Therefore W&B ``files`` describe the
+            # immutable uploaded snapshot, not necessarily the subsequently finalized
+            # local receipt.  Mark that role explicitly so a superseded snapshot can be
+            # distinguished from a current local-file identity without dropping checks
+            # for W&B-only reports, figures, and arrays.
+            child_is_snapshot = wandb_snapshot or (value.get("schema_version") == WANDB_SCHEMA and key == "files")
+            found.extend(_walk_identities(child, wandb_snapshot=child_is_snapshot))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         for child in value:
-            found.extend(_walk_identities(child))
+            found.extend(_walk_identities(child, wandb_snapshot=wandb_snapshot))
     return found
 
 
-def _verify_hash_identities(receipt: Mapping[str, Any], receipt_path: Path) -> int:
+def _verify_hash_identities(
+    receipt: Mapping[str, Any], receipt_path: Path, verified: set[VerifiedIdentity] | None = None
+) -> int:
     checked = 0
     seen: set[tuple[str, str]] = set()
-    for identity in _walk_identities(receipt):
+    memo = set() if verified is None else verified
+    identities = _walk_identities(receipt)
+    current_paths = {Path(str(identity["path"])).resolve() for identity, is_snapshot in identities if not is_snapshot}
+    for identity, is_snapshot in identities:
         path = Path(str(identity["path"]))
         key = (str(path), str(identity["sha256"]))
         if key in seen or path.resolve() == receipt_path.resolve():
             continue
         seen.add(key)
+        if is_snapshot and path.resolve() in current_paths:
+            # The same enclosing receipt carries the finalized current identity.  The
+            # W&B entry remains useful external artifact provenance, but its pre-final
+            # snapshot must not be compared with the now-finalized local receipt bytes.
+            continue
         resolved = path.resolve(strict=True)
-        if not resolved.is_file() or sha256_file(resolved) != identity["sha256"]:
-            raise ValueError(f"postflight file hash mismatch: {path}")
-        if "bytes" in identity and resolved.stat().st_size != identity["bytes"]:
-            raise ValueError(f"postflight file size mismatch: {path}")
+        expected_bytes = identity.get("bytes")
+        memo_key: VerifiedIdentity = (
+            str(resolved),
+            str(identity["sha256"]),
+            expected_bytes if isinstance(expected_bytes, int) else None,
+        )
+        if memo_key not in memo:
+            if not resolved.is_file() or sha256_file(resolved) != identity["sha256"]:
+                raise ValueError(f"postflight file hash mismatch: {path}")
+            if "bytes" in identity and resolved.stat().st_size != identity["bytes"]:
+                raise ValueError(f"postflight file size mismatch: {path}")
+            memo.add(memo_key)
         checked += 1
     return checked
 
@@ -68,7 +98,8 @@ def validate_postflight_inputs(graph_path: Path, output_root: Path) -> dict[str,
     test_receipt = validate_test_receipt(test_path, graph, graph_sha256)
     test_hash = sha256_file(test_path)
     validated: dict[str, Any] = {}
-    hashes_checked = _verify_hash_identities(test_receipt, test_path)
+    verified_identities: set[VerifiedIdentity] = set()
+    hashes_checked = _verify_hash_identities(test_receipt, test_path, verified_identities)
     for label, job in graph["jobs"].items():
         if label == "Z":
             continue
@@ -96,7 +127,7 @@ def validate_postflight_inputs(graph_path: Path, output_root: Path) -> dict[str,
             parent_labels = {item.get("label") for item in provenance.get("parents", []) if isinstance(item, Mapping)}
             if parent_labels != set(job["parents"]):
                 raise ValueError(f"job {label} parent provenance mismatch")
-        hashes_checked += _verify_hash_identities(receipt, receipt_path)
+        hashes_checked += _verify_hash_identities(receipt, receipt_path, verified_identities)
         validated[label] = {
             "job_id": job["job_id"],
             "status": receipt.get("status"),
