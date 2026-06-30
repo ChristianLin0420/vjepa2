@@ -244,9 +244,10 @@ completed result and does not authorize another DIODE run.
 ## Strict Slurm DAG
 
 All jobs use account `edgeai_tao-ptm_image-foundation-model-clip`, partition fallback
-`polar4,polar3,polar,batch_block1,grizzly,batch_block2,batch_block3`, one node, one task, and at most `04:00:00`. GPU jobs
-request one GPU, 16 CPUs, and 160 GB RAM. The test, aggregates, selector, and postflight may request fewer resources but
-remain Slurm jobs. No experiment, target decode, model inference, timing, or optimization runs on the login node.
+`polar4,polar3,polar,batch_block1,grizzly,batch_block2,batch_block3`, one node, one task, one GPU, and at most `04:00:00`.
+These approved partitions reject jobs without a GPU request, so bookkeeping jobs reserve one GPU even when their code
+path remains CPU-only; they may request fewer CPUs and memory. No experiment, target decode, model inference, timing, or
+optimization runs on the login node.
 
 ```text
 T tests

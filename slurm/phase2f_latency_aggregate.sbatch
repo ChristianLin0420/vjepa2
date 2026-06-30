@@ -4,6 +4,7 @@
 #SBATCH --partition=polar4,polar3,polar,batch_block1,grizzly,batch_block2,batch_block3
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=01:00:00

@@ -113,15 +113,12 @@ def validate_jobs(jobs: dict[str, dict[str, Any]]) -> None:
         raise ValueError(
             f"Phase 2f graph labels differ: missing={sorted(expected - set(jobs))}, extra={sorted(set(jobs) - expected)}"
         )
-    gpu_labels = {"T", "C", "E", *(f"L{index:02d}" for index in range(12))}
-    gpu_labels.update(f"P{index}" for index in range(4))
-    gpu_labels.update(label for label in expected if label.startswith("F-"))
     for label, job in jobs.items():
         unknown = set(job["parents"]) - set(jobs)
         if unknown or label in job["parents"]:
             raise ValueError(f"invalid parents for {label}: {job['parents']}")
-        if bool(job["resources"]["gpu_requested"]) != (label in gpu_labels):
-            raise ValueError(f"GPU request mismatch for {label}")
+        if not bool(job["resources"]["gpu_requested"]):
+            raise ValueError(f"approved Phase 2f partitions require one GPU for every job: {label}")
     visiting: set[str] = set()
     visited: set[str] = set()
 

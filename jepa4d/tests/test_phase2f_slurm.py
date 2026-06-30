@@ -52,7 +52,7 @@ def test_exact_73_job_static_dag_and_only_t_is_root() -> None:
     assert len([label for label in labels if label.startswith("F-")]) == 48
 
 
-def test_sbatch_resources_are_frozen_and_gpu_is_requested_only_when_needed() -> None:
+def test_sbatch_resources_are_frozen_and_every_partition_job_requests_a_gpu() -> None:
     expected_files = {
         "phase2f_tests.sbatch",
         "phase2f_asset_audit.sbatch",
@@ -67,34 +67,24 @@ def test_sbatch_resources_are_frozen_and_gpu_is_requested_only_when_needed() -> 
         "phase2f_postflight.sbatch",
     }
     assert {path.name for path in SBATCH_FILES} == expected_files
-    gpu = {
-        "phase2f_tests.sbatch",
-        "phase2f_cache.sbatch",
-        "phase2f_latency.sbatch",
-        "phase2f_train.sbatch",
-        "phase2f_final.sbatch",
-    }
     for path in SBATCH_FILES:
         resources = parse_sbatch(path)
         directives = resources["directives"]
         assert directives["account"] == ACCOUNT
         assert directives["partition"] == PARTITIONS
         assert resources["time_seconds"] <= 4 * 60 * 60
-        assert resources["gpu_requested"] is (path.name in gpu)
+        assert resources["gpu_requested"] is True
 
 
 def test_graph_validator_rejects_gpu_or_parent_drift() -> None:
     parents = _parent_map()
-    gpu_labels = {"T", "C", "E", *(f"L{index:02d}" for index in range(12))}
-    gpu_labels.update(f"P{index}" for index in range(4))
-    gpu_labels.update(label for label in parents if label.startswith("F-"))
     jobs: dict[str, dict[str, Any]] = {
-        label: {"parents": values, "resources": {"gpu_requested": label in gpu_labels}}
+        label: {"parents": values, "resources": {"gpu_requested": True}}
         for label, values in parents.items()
     }
     validate_jobs(jobs)
-    jobs["A"]["resources"]["gpu_requested"] = True
-    with pytest.raises(ValueError, match="GPU request mismatch"):
+    jobs["A"]["resources"]["gpu_requested"] = False
+    with pytest.raises(ValueError, match="require one GPU"):
         validate_jobs(jobs)
 
 
