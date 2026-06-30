@@ -111,9 +111,11 @@ receipt. Those are formal evidence-pipeline blockers, not failures of this bound
 training remains policy-blocked and DIODE remains sealed.
 
 Follow-up v2 code hardening performed after this immutable v1 run adds a strict content-addressed postflight, exact
-metric/config/checkpoint validation, and terminal W&B publication. That later implementation does not retroactively
-upgrade this job or its artifact; a future separately authorized v2 smoke would be required to exercise the stronger
-terminal contract.
+metric/config/checkpoint validation, threshold-derived PyTorch clipping checks, an independent download-and-SHA-256
+round trip of the immutable preliminary W&B artifact, and terminal W&B publication. The verifier records the governed
+W&B 0.28.x SDK identity and creates no pass receipt until the backend artifact's creator, version, digest, manifest, and
+all five file contents match local evidence. That later implementation does not retroactively upgrade this job or its
+artifact; a future separately authorized v2 smoke would be required to exercise the stronger terminal contract.
 
 ## Next experiments
 

@@ -22,10 +22,12 @@ from scripts.run_phase2g_training_smoke import SmokeSettings, run_training_smoke
 from slurm.validate_phase2g_training_smoke import (
     APPROVED_ACCOUNT,
     FINAL_WANDB_SCHEMA,
+    PRELIMINARY_BACKEND_SCHEMA,
     SchedulerIdentity,
     _terminal_uploads,
     finalize_phase2g_online_run,
     validate_phase2g_training_smoke,
+    verify_phase2g_preliminary_backend,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -137,6 +139,24 @@ def _fake_finalizer(**kwargs: Any) -> dict[str, Any]:
         "artifact_digest": "terminal-digest",
         "summary_sha256": sha256_value(summary),
         "files": [{**_file_identity(path, name=name), "role": role} for name, path, role in uploads],
+    }
+
+
+def _fake_preliminary_verifier(**kwargs: Any) -> dict[str, Any]:
+    preliminary = kwargs["preliminary_receipt"]
+    return {
+        "schema_version": PRELIMINARY_BACKEND_SCHEMA,
+        "status": "verified",
+        "entity": preliminary["entity"],
+        "project": preliminary["project"],
+        "run_id": preliminary["run_id"],
+        "artifact_name": preliminary["artifact_name"],
+        "artifact_type": "training-instrumentation-smoke",
+        "artifact_id": preliminary["artifact_id"],
+        "artifact_version": preliminary["artifact_version"],
+        "artifact_digest": preliminary["artifact_digest"],
+        "files_sha256": preliminary["files_sha256"],
+        "files": preliminary["files"],
     }
 
 
@@ -270,9 +290,122 @@ def _validate(output: Path, **changes: Any):
         expected_wandb_entity="test-entity",
         scheduler_lookup=changes.pop("scheduler_lookup", lambda _job_id: _scheduler()),
         git_lookup=changes.pop("git_lookup", lambda _root: (COMMIT, True)),
+        wandb_preliminary_verifier=changes.pop("wandb_preliminary_verifier", _fake_preliminary_verifier),
         wandb_finalizer=changes.pop("wandb_finalizer", _fake_finalizer),
         **changes,
     )
+
+
+class _BackendRun:
+    def __init__(self, preliminary: Mapping[str, Any]) -> None:
+        self.entity = preliminary["entity"]
+        self.project = preliminary["project"]
+        self.id = preliminary["run_id"]
+        self.name = preliminary["run_name"]
+        self.group = preliminary["group"]
+        self.job_type = preliminary["job_type"]
+        self.url = preliminary["run_url"]
+        self.state = "finished"
+        self.artifact: _BackendArtifact | None = None
+
+    def logged_artifacts(self, *, per_page: int) -> list[_BackendArtifact]:
+        assert per_page == 100
+        assert self.artifact is not None
+        return [self.artifact]
+
+
+class _BackendArtifact:
+    def __init__(
+        self,
+        preliminary: Mapping[str, Any],
+        *,
+        creator: _BackendRun,
+        files: Mapping[str, bytes],
+    ) -> None:
+        self.entity = preliminary["entity"]
+        self.project = preliminary["project"]
+        self.name = f"{preliminary['artifact_name']}:{preliminary['artifact_version']}"
+        self.type = "training-instrumentation-smoke"
+        self.id = preliminary["artifact_id"]
+        self.version = preliminary["artifact_version"]
+        self.digest = preliminary["artifact_digest"]
+        self.state = "COMMITTED"
+        self.is_link = False
+        self.metadata = {
+            "schema_version": postflight_module.SMOKE_SCHEMA,
+            "evidence_level": "integration-smoke",
+            "synthetic_inputs_only": True,
+            "terminal_status": "pending-postflight",
+            "config_sha256": preliminary["config_sha256"],
+            "files_sha256": preliminary["files_sha256"],
+        }
+        self.manifest = SimpleNamespace(
+            entries={name: SimpleNamespace(ref=None, size=len(value)) for name, value in files.items()}
+        )
+        self.creator = creator
+        self.files = dict(files)
+        self.downloaded = False
+        self.verified = False
+
+    def logged_by(self) -> _BackendRun:
+        return self.creator
+
+    def download(
+        self,
+        *,
+        root: str,
+        allow_missing_references: bool,
+        skip_cache: bool,
+        multipart: bool,
+    ) -> str:
+        assert allow_missing_references is False
+        assert skip_cache is True
+        assert multipart is False
+        target = Path(root)
+        assert not any(target.iterdir())
+        for name, value in self.files.items():
+            path = target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(value)
+        self.downloaded = True
+        return str(target)
+
+    def verify(self, root: str) -> None:
+        assert self.downloaded
+        assert Path(root).is_dir()
+        self.verified = True
+
+
+class _BackendApi:
+    def __init__(self, preliminary: Mapping[str, Any], files: Mapping[str, bytes]) -> None:
+        self.run_value = _BackendRun(preliminary)
+        self.artifact_value = _BackendArtifact(preliminary, creator=self.run_value, files=files)
+        self.run_value.artifact = self.artifact_value
+        self.preliminary = preliminary
+
+    def run(self, path: str) -> _BackendRun:
+        assert path == f"{self.preliminary['entity']}/{self.preliminary['project']}/{self.preliminary['run_id']}"
+        return self.run_value
+
+    def artifact(self, path: str, *, type: str) -> _BackendArtifact:
+        assert type == "training-instrumentation-smoke"
+        assert path == (
+            f"{self.preliminary['entity']}/{self.preliminary['project']}/"
+            f"{self.preliminary['artifact_name']}:{self.preliminary['artifact_version']}"
+        )
+        return self.artifact_value
+
+
+def _backend_api_snapshot(output: Path) -> _BackendApi:
+    preliminary = json.loads((output / "wandb_receipt.json").read_text(encoding="utf-8"))
+    files = {
+        "steps.jsonl": (output / "steps.jsonl").read_bytes(),
+        **{
+            f"checkpoints/{arm}.pt": (output / "checkpoints" / f"{arm}.pt").read_bytes()
+            for arm in ("M0", "M1", "M2", "M3")
+        },
+    }
+    return _BackendApi(preliminary, files)
 
 
 def test_postflight_validates_complete_contract_and_is_idempotent(tmp_path: Path, one_cpu_thread: None) -> None:
@@ -283,7 +416,10 @@ def test_postflight_validates_complete_contract_and_is_idempotent(tmp_path: Path
     assert terminal["status"] == "pass"
     assert terminal["git_commit"] == COMMIT
     assert (output / "SUCCESS").read_text(encoding="utf-8") == f"terminal_sha256={receipt.sha256}\n"
-    assert len(list((output / "postflight").glob("postflight-*.json"))) == 1
+    postflight_paths = list((output / "postflight").glob("postflight-*.json"))
+    assert len(postflight_paths) == 1
+    postflight = verify_content_addressed_json(postflight_paths[0], prefix="postflight")
+    assert postflight["preliminary_wandb_backend"]["status"] == "verified"
     assert len(list((output / "wandb-final").glob("wandb-final-*.json"))) == 1
     assert _validate(output).path == receipt.path
 
@@ -406,13 +542,17 @@ def test_incomplete_objective_log_set_fails_after_hashes_are_rebound(
 
 def test_partial_step_log_fails_completeness_gate(tmp_path: Path, one_cpu_thread: None) -> None:
     output = _build_output(tmp_path)
-    _rewrite_step_contract(output, lambda rows: rows.pop())
+
+    def remove_last_row(rows: list[dict[str, Any]]) -> None:
+        rows.pop()
+
+    _rewrite_step_contract(output, remove_last_row)
     with pytest.raises(ValueError, match="exactly 12 optimizer steps"):
         _validate(output)
     assert not (output / "postflight").exists()
 
 
-@pytest.mark.parametrize("field", ("owned-gradient", "actual-clipping"))
+@pytest.mark.parametrize("field", ("owned-gradient", "actual-clipping", "self-consistent-clipping"))
 def test_gradient_or_clipping_tamper_fails_semantic_gate(
     tmp_path: Path,
     one_cpu_thread: None,
@@ -423,8 +563,14 @@ def test_gradient_or_clipping_tamper_fails_semantic_gate(
     def tamper(rows: list[dict[str, Any]]) -> None:
         if field == "owned-gradient":
             rows[0]["gradients"]["norm_scale"] = 1.0
-        else:
+        elif field == "actual-clipping":
             rows[0]["optimizer"]["post_clip_gradient_norm"] *= 0.5
+        else:
+            optimizer = rows[0]["optimizer"]
+            assert optimizer["pre_clip_gradient_norm"] < optimizer["gradient_clip_threshold"]
+            optimizer["post_clip_gradient_norm"] = optimizer["pre_clip_gradient_norm"] / 2
+            optimizer["applied_clip_coefficient"] = 0.5
+            optimizer["was_clipped"] = 1
 
     _rewrite_step_contract(output, tamper)
     with pytest.raises(ValueError, match="owned gradient|clipping"):
@@ -475,10 +621,12 @@ def test_governed_numeric_configuration_is_frozen(
 ) -> None:
     output = _build_output(tmp_path)
     if field == "learning-rate":
-        _rewrite_step_contract(
-            output,
-            lambda rows: [row["optimizer"].__setitem__("learning_rate", 2e-3) for row in rows],
-        )
+
+        def change_learning_rate(rows: list[dict[str, Any]]) -> None:
+            for row in rows:
+                row["optimizer"]["learning_rate"] = 2e-3
+
+        _rewrite_step_contract(output, change_learning_rate)
         _rewrite_config_contract(output, lambda config: config["optimizer"].__setitem__("learning_rate", 2e-3))
     else:
         _rewrite_config_contract(output, lambda config: config.__setitem__("seed", 18))
@@ -514,6 +662,93 @@ def test_rehashed_checkpoint_dtype_tamper_fails_exact_reload(tmp_path: Path, one
     with pytest.raises(ValueError, match="strictly reconstruct|tensor contract"):
         _validate(output)
     assert not (output / "postflight").exists()
+
+
+def test_backend_round_trip_rejects_self_consistent_checkpoint_rewrite(
+    tmp_path: Path,
+    one_cpu_thread: None,
+) -> None:
+    output = _build_output(tmp_path)
+    backend = _backend_api_snapshot(output)
+    preliminary = json.loads((output / "wandb_receipt.json").read_text(encoding="utf-8"))
+    paths = {
+        "steps.jsonl": output / "steps.jsonl",
+        **{f"checkpoints/{arm}.pt": output / "checkpoints" / f"{arm}.pt" for arm in ("M0", "M1", "M2", "M3")},
+    }
+    evidence = verify_phase2g_preliminary_backend(
+        preliminary_receipt=preliminary,
+        paths=paths,
+        wandb_api=backend,
+    )
+    assert evidence["status"] == "verified"
+    assert backend.artifact_value.downloaded is True
+    assert backend.artifact_value.verified is True
+    original_backend_files = dict(backend.artifact_value.files)
+
+    def change_value(payload: dict[str, Any]) -> None:
+        name = next(name for name, tensor in payload["state_dict"].items() if tensor.is_floating_point())
+        payload["state_dict"][name].view(-1)[0] += 123.0
+
+    _rewrite_checkpoint_contract(output, "M2", change_value)
+    forged_preliminary = json.loads((output / "wandb_receipt.json").read_text(encoding="utf-8"))
+    forged_backend = _BackendApi(forged_preliminary, original_backend_files)
+    finalized = False
+
+    def unexpected_finalizer(**kwargs: Any) -> dict[str, Any]:
+        nonlocal finalized
+        finalized = True
+        return _fake_finalizer(**kwargs)
+
+    with pytest.raises(RuntimeError, match="manifest size differs|backend file differs"):
+        _validate(
+            output,
+            wandb_preliminary_verifier=lambda **kwargs: verify_phase2g_preliminary_backend(
+                **kwargs,
+                wandb_api=forged_backend,
+            ),
+            wandb_finalizer=unexpected_finalizer,
+        )
+    assert finalized is False
+    assert not (output / "postflight").exists()
+    assert not (output / "wandb-final").exists()
+    assert not (output / "terminal").exists()
+    assert not (output / "SUCCESS").exists()
+
+
+def test_backend_verifier_retries_only_not_yet_finished_visibility(
+    tmp_path: Path,
+    one_cpu_thread: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = _build_output(tmp_path)
+    preliminary = json.loads((output / "wandb_receipt.json").read_text(encoding="utf-8"))
+    paths = {
+        "steps.jsonl": output / "steps.jsonl",
+        **{f"checkpoints/{arm}.pt": output / "checkpoints" / f"{arm}.pt" for arm in ("M0", "M1", "M2", "M3")},
+    }
+    first = _backend_api_snapshot(output)
+    first.run_value.state = "running"
+    second = _backend_api_snapshot(output)
+    apis = iter((first, second))
+    api_calls: list[int] = []
+    sleeps: list[int] = []
+    import wandb
+
+    def api_factory(*, timeout: int) -> _BackendApi:
+        assert timeout == 30
+        api_calls.append(timeout)
+        return next(apis)
+
+    monkeypatch.setenv("WANDB_MODE", "online")
+    monkeypatch.setattr(wandb, "Api", api_factory)
+    monkeypatch.setattr(postflight_module.time, "sleep", sleeps.append)
+    evidence = verify_phase2g_preliminary_backend(
+        preliminary_receipt=preliminary,
+        paths=paths,
+    )
+    assert evidence["status"] == "verified"
+    assert api_calls == [30, 30]
+    assert sleeps == [1]
 
 
 def test_finalizer_failure_leaves_retryable_postflight_without_success(

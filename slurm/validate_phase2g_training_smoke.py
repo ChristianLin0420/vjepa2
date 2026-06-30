@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
@@ -40,6 +41,7 @@ from jepa4d.validation._content import (
 SMOKE_SCHEMA = "jepa4d-phase2g-training-instrumentation-smoke-v2"
 STEP_SCHEMA = "jepa4d-phase2g-training-instrumentation-step-v2"
 PRELIMINARY_WANDB_SCHEMA = "jepa4d-phase2g-training-instrumentation-wandb-v2"
+PRELIMINARY_BACKEND_SCHEMA = "jepa4d-phase2g-training-instrumentation-wandb-backend-v1"
 POSTFLIGHT_SCHEMA = "jepa4d-phase2g-training-instrumentation-postflight-v1"
 FINAL_WANDB_SCHEMA = "jepa4d-phase2g-training-instrumentation-wandb-final-v1"
 TERMINAL_SCHEMA = "jepa4d-phase2g-training-instrumentation-terminal-v1"
@@ -71,6 +73,7 @@ _JOB_ID = re.compile(r"^[0-9]+$")
 _JOB_NAME = re.compile(r"^j4d-p2g-smoke-[A-Za-z0-9_.-]+$")
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_WANDB_SDK_VERSION = re.compile(r"^0\.28\.[0-9]+(?:[+.-][A-Za-z0-9.]+)?$")
 _CREDENTIAL = re.compile(r"wandb_v1_[A-Za-z0-9_-]+|(?:^|[._-])hf_[A-Za-z0-9]{16,}", re.IGNORECASE)
 _LOCAL_PATH = re.compile(r"(?i)(?:\bfile://|\bs3://|(?:/lustre|/home|/root|/tmp|/var/tmp)/\S+)")
 
@@ -233,6 +236,10 @@ SchedulerLookup = Callable[[str], SchedulerIdentity]
 GitLookup = Callable[[Path], tuple[str, bool]]
 WandbPreliminaryVerifier = Callable[..., dict[str, Any]]
 WandbFinalizer = Callable[..., dict[str, Any]]
+
+
+class _WandbBackendNotReady(RuntimeError):
+    """A bounded-retry condition while immutable W&B evidence becomes visible."""
 
 
 def _time_seconds(value: str) -> int:
@@ -541,6 +548,7 @@ def _validate_runtime_identity(runtime: object, *, repo_root: Path, commit: str,
         "scheduler_job_id",
         "python_version",
         "torch_version",
+        "wandb_version",
         "torch_cuda_build",
         "cudnn_version",
         "hardware",
@@ -552,8 +560,9 @@ def _validate_runtime_identity(runtime: object, *, repo_root: Path, commit: str,
     if (
         any(
             not isinstance(runtime.get(name), str) or not str(runtime[name]).strip()
-            for name in ("python_version", "torch_version", "torch_cuda_build")
+            for name in ("python_version", "torch_version", "wandb_version", "torch_cuda_build")
         )
+        or _WANDB_SDK_VERSION.fullmatch(str(runtime.get("wandb_version", ""))) is None
         or isinstance(runtime.get("cudnn_version"), bool)
         or not isinstance(runtime.get("cudnn_version"), int)
         or int(runtime["cudnn_version"]) <= 0
@@ -1125,6 +1134,296 @@ def _validate_preliminary_wandb(
     return value
 
 
+def _backend_run_identity(run: object) -> dict[str, Any]:
+    return {
+        "entity": getattr(run, "entity", None),
+        "project": getattr(run, "project", None),
+        "run_id": getattr(run, "id", None),
+        "run_name": getattr(run, "name", None),
+        "group": getattr(run, "group", None),
+        "job_type": getattr(run, "job_type", None),
+        "run_url": getattr(run, "url", None),
+    }
+
+
+def _require_backend_run_identity(run: object, preliminary: Mapping[str, Any], *, location: str) -> None:
+    expected = {
+        "entity": preliminary["entity"],
+        "project": preliminary["project"],
+        "run_id": preliminary["run_id"],
+        "run_name": preliminary["run_name"],
+        "group": preliminary["group"],
+        "job_type": preliminary["job_type"],
+        "run_url": preliminary["run_url"],
+    }
+    if _backend_run_identity(run) != expected:
+        raise RuntimeError(f"{location} differs from the preliminary W&B run identity")
+
+
+def _require_backend_artifact_identity(artifact: object, preliminary: Mapping[str, Any], *, location: str) -> None:
+    expected_name = f"{preliminary['artifact_name']}:{preliminary['artifact_version']}"
+    actual = {
+        "entity": getattr(artifact, "entity", None),
+        "project": getattr(artifact, "project", None),
+        "name": getattr(artifact, "name", None),
+        "type": getattr(artifact, "type", None),
+        "id": getattr(artifact, "id", None),
+        "version": getattr(artifact, "version", None),
+        "digest": getattr(artifact, "digest", None),
+        "is_link": getattr(artifact, "is_link", None),
+        "metadata": getattr(artifact, "metadata", None),
+    }
+    expected = {
+        "entity": preliminary["entity"],
+        "project": preliminary["project"],
+        "name": expected_name,
+        "type": "training-instrumentation-smoke",
+        "id": preliminary["artifact_id"],
+        "version": preliminary["artifact_version"],
+        "digest": preliminary["artifact_digest"],
+        "is_link": False,
+        "metadata": {
+            "schema_version": SMOKE_SCHEMA,
+            "evidence_level": "integration-smoke",
+            "synthetic_inputs_only": True,
+            "terminal_status": "pending-postflight",
+            "config_sha256": preliminary["config_sha256"],
+            "files_sha256": preliminary["files_sha256"],
+        },
+    }
+    if actual != expected:
+        raise RuntimeError(f"{location} differs from the immutable preliminary W&B artifact identity")
+
+
+def _verify_phase2g_preliminary_backend_once(
+    *,
+    preliminary_receipt: Mapping[str, Any],
+    paths: Mapping[str, Path],
+    wandb_api: Any,
+) -> dict[str, Any]:
+    version = preliminary_receipt.get("artifact_version")
+    if not isinstance(version, str) or re.fullmatch(r"v[0-9]+", version) is None:
+        raise ValueError("preliminary W&B artifact must use an immutable numeric version")
+    expected_names = ["steps.jsonl", *(f"checkpoints/{arm}.pt" for arm in ARMS)]
+    if set(paths) != set(expected_names):
+        raise ValueError("preliminary backend verification received an incomplete local file set")
+    api = wandb_api
+
+    run_path = f"{preliminary_receipt['entity']}/{preliminary_receipt['project']}/{preliminary_receipt['run_id']}"
+    artifact_path = (
+        f"{preliminary_receipt['entity']}/{preliminary_receipt['project']}/"
+        f"{preliminary_receipt['artifact_name']}:{version}"
+    )
+    try:
+        run = api.run(run_path)
+    except Exception as error:
+        raise _WandbBackendNotReady("preliminary W&B run is not yet queryable") from error
+    _require_backend_run_identity(run, preliminary_receipt, location="queried W&B run")
+    if getattr(run, "state", None) != "finished":
+        raise _WandbBackendNotReady("preliminary W&B run is not yet finished")
+    try:
+        artifact = api.artifact(artifact_path, type="training-instrumentation-smoke")
+    except Exception as error:
+        raise _WandbBackendNotReady("preliminary W&B artifact is not yet queryable") from error
+    _require_backend_artifact_identity(artifact, preliminary_receipt, location="queried W&B artifact")
+    if getattr(artifact, "state", None) != "COMMITTED":
+        raise _WandbBackendNotReady("preliminary W&B artifact is not yet committed")
+
+    try:
+        creator = artifact.logged_by()
+    except Exception as error:
+        raise _WandbBackendNotReady("preliminary W&B artifact creator is not yet queryable") from error
+    if creator is None:
+        raise _WandbBackendNotReady("preliminary W&B artifact creator is not yet visible")
+    _require_backend_run_identity(creator, preliminary_receipt, location="W&B artifact creator")
+    if getattr(creator, "state", None) != "finished":
+        raise _WandbBackendNotReady("preliminary W&B artifact creator is not yet finished")
+    try:
+        logged_matches = [
+            candidate
+            for candidate in run.logged_artifacts(per_page=100)
+            if getattr(candidate, "id", None) == preliminary_receipt["artifact_id"]
+        ]
+    except Exception as error:
+        raise _WandbBackendNotReady("preliminary W&B run artifacts are not yet queryable") from error
+    if not logged_matches:
+        raise _WandbBackendNotReady("preliminary W&B artifact is not yet visible on its creating run")
+    if len(logged_matches) != 1:
+        raise RuntimeError("preliminary W&B artifact is not uniquely present in the creating run")
+    _require_backend_artifact_identity(logged_matches[0], preliminary_receipt, location="creating run's W&B artifact")
+    if getattr(logged_matches[0], "state", None) != "COMMITTED":
+        raise _WandbBackendNotReady("creating run's preliminary W&B artifact is not yet committed")
+
+    try:
+        manifest = getattr(artifact, "manifest", None)
+    except Exception as error:
+        raise _WandbBackendNotReady("preliminary W&B artifact manifest is not yet queryable") from error
+    entries = getattr(manifest, "entries", None)
+    if not isinstance(entries, Mapping):
+        raise RuntimeError("preliminary W&B artifact lacks a readable manifest")
+    manifest_entries = {str(name): entry for name, entry in entries.items()}
+    if len(manifest_entries) != len(entries) or set(manifest_entries) != set(expected_names):
+        raise RuntimeError("preliminary W&B artifact manifest does not contain exactly five governed files")
+    receipt_files = preliminary_receipt.get("files")
+    if not isinstance(receipt_files, list):
+        raise ValueError("preliminary W&B receipt lacks its file manifest")
+    receipt_by_name = {str(value["name"]): value for value in receipt_files if isinstance(value, Mapping)}
+    if set(receipt_by_name) != set(expected_names):
+        raise ValueError("preliminary W&B receipt file set is incomplete")
+    for name in expected_names:
+        entry = manifest_entries[name]
+        if getattr(entry, "ref", None) is not None:
+            raise RuntimeError(f"preliminary W&B artifact contains a forbidden reference: {name}")
+        size = getattr(entry, "size", None)
+        if isinstance(size, bool) or not isinstance(size, int) or size != receipt_by_name[name]["bytes"]:
+            raise RuntimeError(f"preliminary W&B manifest size differs from its receipt: {name}")
+    if getattr(artifact, "digest", None) != preliminary_receipt["artifact_digest"]:
+        raise RuntimeError("preliminary W&B artifact digest changed while reading its manifest")
+
+    with tempfile.TemporaryDirectory(prefix="jepa4d-phase2g-wandb-") as temporary:
+        temporary_root = Path(temporary).resolve(strict=True)
+        try:
+            downloaded_value = artifact.download(
+                root=str(temporary_root),
+                allow_missing_references=False,
+                skip_cache=True,
+                multipart=False,
+            )
+        except Exception as error:
+            raise _WandbBackendNotReady("preliminary W&B artifact content is not yet downloadable") from error
+        downloaded_root = Path(downloaded_value).resolve(strict=True)
+        if downloaded_root != temporary_root or downloaded_root.is_symlink() or not downloaded_root.is_dir():
+            raise RuntimeError("preliminary W&B artifact downloaded outside its fresh verification root")
+        downloaded_entries = set(downloaded_root.rglob("*"))
+        if any(path.is_symlink() or (not path.is_file() and not path.is_dir()) for path in downloaded_entries):
+            raise RuntimeError("preliminary W&B artifact download contains a link or non-regular entry")
+        downloaded_files = {
+            path.relative_to(downloaded_root).as_posix(): path for path in downloaded_entries if path.is_file()
+        }
+        if set(downloaded_files) != set(expected_names):
+            raise RuntimeError("preliminary W&B artifact download does not contain exactly five governed files")
+        expected_directories = {"checkpoints"}
+        downloaded_directories = {
+            path.relative_to(downloaded_root).as_posix() for path in downloaded_entries if path.is_dir()
+        }
+        if downloaded_directories != expected_directories:
+            raise RuntimeError("preliminary W&B artifact download has an unexpected directory layout")
+        artifact.verify(str(downloaded_root))
+        verified_files: list[dict[str, Any]] = []
+        for name in expected_names:
+            downloaded_identity = _stable_identity(downloaded_files[name])
+            value = {
+                "name": name,
+                "bytes": downloaded_identity.bytes,
+                "sha256": downloaded_identity.sha256,
+            }
+            if value != receipt_by_name[name] or not _identity_matches(value, paths[name], published_name=name):
+                raise RuntimeError(f"preliminary W&B backend file differs from local governed evidence: {name}")
+            verified_files.append(value)
+        if getattr(artifact, "digest", None) != preliminary_receipt["artifact_digest"]:
+            raise RuntimeError("preliminary W&B artifact digest changed during content verification")
+
+    evidence = {
+        "schema_version": PRELIMINARY_BACKEND_SCHEMA,
+        "status": "verified",
+        "entity": preliminary_receipt["entity"],
+        "project": preliminary_receipt["project"],
+        "run_id": preliminary_receipt["run_id"],
+        "artifact_name": preliminary_receipt["artifact_name"],
+        "artifact_type": "training-instrumentation-smoke",
+        "artifact_id": preliminary_receipt["artifact_id"],
+        "artifact_version": preliminary_receipt["artifact_version"],
+        "artifact_digest": preliminary_receipt["artifact_digest"],
+        "files_sha256": sha256_value({"files": verified_files}),
+        "files": verified_files,
+    }
+    if evidence["files_sha256"] != preliminary_receipt["files_sha256"]:
+        raise RuntimeError("preliminary W&B backend file-manifest digest differs from its receipt")
+    _safe_finite_tree(evidence, "wandb_preliminary_backend")
+    return evidence
+
+
+def verify_phase2g_preliminary_backend(
+    *,
+    preliminary_receipt: Mapping[str, Any],
+    paths: Mapping[str, Path],
+    wandb_api: Any | None = None,
+) -> dict[str, Any]:
+    """Round-trip the immutable preliminary W&B artifact and compare all five files."""
+
+    if wandb_api is not None:
+        return _verify_phase2g_preliminary_backend_once(
+            preliminary_receipt=preliminary_receipt,
+            paths=paths,
+            wandb_api=wandb_api,
+        )
+    if os.environ.get("WANDB_MODE") != "online":
+        raise RuntimeError("preliminary W&B backend verification requires WANDB_MODE=online")
+    import wandb
+
+    sdk_version = getattr(wandb, "__version__", None)
+    if (
+        not isinstance(sdk_version, str)
+        or _WANDB_SDK_VERSION.fullmatch(sdk_version) is None
+        or not callable(getattr(wandb, "Api", None))
+    ):
+        raise RuntimeError("preliminary backend verification requires the governed W&B SDK 0.28.x API")
+    last_error: _WandbBackendNotReady | None = None
+    for attempt in range(3):
+        try:
+            return _verify_phase2g_preliminary_backend_once(
+                preliminary_receipt=preliminary_receipt,
+                paths=paths,
+                wandb_api=wandb.Api(timeout=30),
+            )
+        except _WandbBackendNotReady as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(2**attempt)
+    raise RuntimeError("preliminary W&B backend evidence did not become visible after three attempts") from last_error
+
+
+def _validate_preliminary_backend_evidence(
+    value: object,
+    *,
+    preliminary: Mapping[str, Any],
+) -> dict[str, Any]:
+    required = {
+        "schema_version",
+        "status",
+        "entity",
+        "project",
+        "run_id",
+        "artifact_name",
+        "artifact_type",
+        "artifact_id",
+        "artifact_version",
+        "artifact_digest",
+        "files_sha256",
+        "files",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("preliminary W&B backend verification schema is incomplete or extended")
+    expected = {
+        "schema_version": PRELIMINARY_BACKEND_SCHEMA,
+        "status": "verified",
+        "entity": preliminary["entity"],
+        "project": preliminary["project"],
+        "run_id": preliminary["run_id"],
+        "artifact_name": preliminary["artifact_name"],
+        "artifact_type": "training-instrumentation-smoke",
+        "artifact_id": preliminary["artifact_id"],
+        "artifact_version": preliminary["artifact_version"],
+        "artifact_digest": preliminary["artifact_digest"],
+        "files_sha256": preliminary["files_sha256"],
+        "files": preliminary["files"],
+    }
+    if value != expected:
+        raise ValueError("preliminary W&B backend verification differs from the validated receipt")
+    _safe_finite_tree(value, "wandb_preliminary_backend")
+    return value
+
+
 def _validate_training_artifacts(
     *,
     root: Path,
@@ -1568,6 +1867,7 @@ def _validate_phase2g_locked(
     expected_wandb_entity: str | None,
     scheduler_lookup: SchedulerLookup,
     git_lookup: GitLookup,
+    wandb_preliminary_verifier: WandbPreliminaryVerifier,
     wandb_finalizer: WandbFinalizer,
 ) -> ContentAddress:
     root = output
@@ -1604,6 +1904,17 @@ def _validate_phase2g_locked(
     training_path = root / "training_receipt.json"
     wandb_path = root / "wandb_receipt.json"
     steps_path = root / "steps.jsonl"
+    preliminary_paths = {
+        "steps.jsonl": steps_path,
+        **{f"checkpoints/{arm}.pt": root / "checkpoints" / f"{arm}.pt" for arm in ARMS},
+    }
+    preliminary_backend = _validate_preliminary_backend_evidence(
+        wandb_preliminary_verifier(
+            preliminary_receipt=preliminary_wandb,
+            paths=preliminary_paths,
+        ),
+        preliminary=preliminary_wandb,
+    )
     checkpoint_hashes = {arm: sha256_file(root / "checkpoints" / f"{arm}.pt") for arm in ARMS}
     postflight_payload = {
         "schema_version": POSTFLIGHT_SCHEMA,
@@ -1612,6 +1923,7 @@ def _validate_phase2g_locked(
         "git_commit": commit,
         "training_receipt_sha256": sha256_file(training_path),
         "preliminary_wandb_receipt_sha256": sha256_file(wandb_path),
+        "preliminary_wandb_backend": preliminary_backend,
         "config_sha256": training["config_sha256"],
         "steps_sha256": sha256_file(steps_path),
         "checkpoint_sha256": checkpoint_hashes,
@@ -1742,6 +2054,7 @@ def validate_phase2g_training_smoke(
     expected_wandb_entity: str | None = None,
     scheduler_lookup: SchedulerLookup = scheduler_identity,
     git_lookup: GitLookup = git_identity,
+    wandb_preliminary_verifier: WandbPreliminaryVerifier = verify_phase2g_preliminary_backend,
     wandb_finalizer: WandbFinalizer = finalize_phase2g_online_run,
 ) -> ContentAddress:
     """Serialize postflight publication and verify the final exact artifact set."""
@@ -1770,6 +2083,7 @@ def validate_phase2g_training_smoke(
             expected_wandb_entity=expected_wandb_entity,
             scheduler_lookup=scheduler_lookup,
             git_lookup=git_lookup,
+            wandb_preliminary_verifier=wandb_preliminary_verifier,
             wandb_finalizer=wandb_finalizer,
         )
 

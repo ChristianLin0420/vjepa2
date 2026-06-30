@@ -52,6 +52,7 @@ CLAIM_BOUNDARY = (
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _CREDENTIAL_SHAPE = re.compile(r"wandb_v1_[A-Za-z0-9_-]+|(?:^|[._-])hf_[A-Za-z0-9]{16,}", re.IGNORECASE)
+_WANDB_SDK_VERSION = re.compile(r"^0\.28\.[0-9]+(?:[+.-][A-Za-z0-9.]+)?$")
 _OBJECTIVE_METRICS = frozenset(
     {
         "total",
@@ -217,7 +218,16 @@ def _file_identity(path: Path, *, published_name: str | None = None) -> dict[str
     return identity
 
 
-def _runtime_identity(settings: SmokeSettings, device: torch.device) -> dict[str, Any]:
+def _validated_wandb_sdk_version(wandb_module: Any) -> str:
+    version = getattr(wandb_module, "__version__", None)
+    if not isinstance(version, str) or _WANDB_SDK_VERSION.fullmatch(version) is None:
+        raise RuntimeError("Phase 2g smoke requires the governed W&B SDK 0.28.x")
+    if not callable(getattr(wandb_module, "init", None)) or not callable(getattr(wandb_module, "Artifact", None)):
+        raise RuntimeError("Phase 2g smoke W&B SDK lacks required online artifact capabilities")
+    return version
+
+
+def _runtime_identity(settings: SmokeSettings, device: torch.device, *, wandb_version: str) -> dict[str, Any]:
     model_module = Path(sys.modules[Phase2fScaleGeometryProbe.__module__].__file__ or "").resolve(strict=True)
     training_module = Path(sys.modules[train_phase2f_step.__module__].__file__ or "").resolve(strict=True)
     hardware: dict[str, Any] = {"device_type": device.type}
@@ -238,6 +248,7 @@ def _runtime_identity(settings: SmokeSettings, device: torch.device) -> dict[str
         "scheduler_job_id": settings.scheduler_job_id,
         "python_version": platform.python_version(),
         "torch_version": str(torch.__version__),
+        "wandb_version": wandb_version,
         "torch_cuda_build": None if torch.version.cuda is None else str(torch.version.cuda),
         "cudnn_version": torch.backends.cudnn.version(),
         "hardware": hardware,
@@ -600,13 +611,14 @@ def run_training_smoke(
     device = torch.device(settings.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("the requested CUDA device is unavailable")
+    wandb_version = _validated_wandb_sdk_version(wandb_module)
     output = settings.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     checkpoint_dir = output / "checkpoints"
     checkpoint_dir.mkdir()
     steps_path = output / "steps.jsonl"
     steps_path.touch()
-    runtime_identity = _runtime_identity(settings, device)
+    runtime_identity = _runtime_identity(settings, device, wandb_version=wandb_version)
     configs = phase2f_arm_configs(settings.input_dim)
     loss_config = Phase2fLossConfig()
     optimizer_settings = _optimizer_settings(settings)

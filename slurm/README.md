@@ -247,9 +247,18 @@ The runner first writes a pending-postflight v2 receipt. Success then requires
 strict semantic revalidation of exactly 12 optimizer rows, all four M0-M3
 checkpoints, the frozen optimizer/configuration, gradient firewall, complete
 metric sets, scheduler/Git/code identities, and the preliminary online W&B
-upload. The validator resumes that exact W&B run and uploads a self-contained
-terminal artifact with the training, preliminary-W&B, and postflight receipts,
-the step log, and all four validated checkpoints. Only then does it write
+upload. Before creating any pass receipt, the validator uses the governed W&B
+0.28.x public API to query the exact finished creator run and immutable numeric
+artifact version, verifies its ID/digest/type/metadata and exact five-file
+manifest, downloads it without cache into a fresh temporary directory, and
+compares every byte count and SHA-256 with the local step log and checkpoints.
+Only backend-visibility conditions receive three bounded retries; identity or
+content mismatches fail immediately. The recorded pre/post clipping evidence is
+also checked against PyTorch's exact `max_norm / (pre_norm + 1e-6)` rule rather
+than against self-reported ratios. The validator then resumes that exact W&B
+run and uploads a self-contained terminal artifact with the training,
+preliminary-W&B, and postflight receipts, the step log, and all four validated
+checkpoints. Only then does it write
 exactly one final W&B receipt, terminal receipt, and terminal-bound `SUCCESS`
 marker. A separate `SUCCESS` marker is written in the structured Slurm log
 directory last. GPU telemetry is sampled every second. These artifacts prove

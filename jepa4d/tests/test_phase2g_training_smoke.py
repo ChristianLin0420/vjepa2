@@ -95,6 +95,8 @@ class _FakeRun:
 
 
 class _FakeWandb:
+    __version__ = "0.28.0"
+
     def __init__(self) -> None:
         self.run = _FakeRun()
         self.init_kwargs: dict[str, Any] | None = None
@@ -241,9 +243,26 @@ def test_hardware_uuid_is_pseudonymized_before_serialization(tmp_path: Path, mon
             total_memory=1024,
         ),
     )
-    identity = _runtime_identity(_minimal_settings(tmp_path / "unused"), torch.device("cuda:0"))
+    identity = _runtime_identity(
+        _minimal_settings(tmp_path / "unused"),
+        torch.device("cuda:0"),
+        wandb_version="0.28.0",
+    )
     assert "device_uuid" not in identity["hardware"]
     assert identity["hardware"]["device_uuid_sha256"] == _sha256_text(raw_uuid)
+
+
+def test_ungoverned_wandb_sdk_fails_before_creating_output(tmp_path: Path) -> None:
+    output = tmp_path / "ungoverned-wandb"
+    fake = _FakeWandb()
+    fake.__version__ = "0.27.0"
+    with pytest.raises(RuntimeError, match="governed W&B SDK 0.28.x"):
+        run_training_smoke(
+            _minimal_settings(output),
+            wandb_module=fake,
+            telemetry_reader=lambda _device: {},
+        )
+    assert not output.exists()
 
 
 def test_cpu_smoke_persists_complete_safe_contract(tmp_path: Path, one_cpu_thread: None) -> None:
@@ -301,6 +320,7 @@ def test_cpu_smoke_persists_complete_safe_contract(tmp_path: Path, one_cpu_threa
     assert receipt["runtime_identity"] == receipt["config"]["runtime_identity"]
     assert receipt["runtime_identity"]["git_commit"] == "0" * 40
     assert receipt["runtime_identity"]["scheduler_job_id"] == "unit-test"
+    assert receipt["runtime_identity"]["wandb_version"] == "0.28.0"
     assert set(receipt["runtime_identity"]["code"]) == {"runner", "model_module", "training_module"}
     assert all(len(identity["sha256"]) == 64 for identity in receipt["runtime_identity"]["code"].values())
     assert receipt["total_optimizer_steps"] == len(ARMS)
