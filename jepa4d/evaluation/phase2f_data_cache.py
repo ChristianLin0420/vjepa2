@@ -149,7 +149,7 @@ def _validate_k(value: torch.Tensor, expected_shape: tuple[int, ...], label: str
 def _resize_rgb(rgb: torch.Tensor, crop: tuple[int, int, int, int], size: tuple[int, int]) -> torch.Tensor:
     top, left, height, width = crop
     value = rgb[:, top : top + height, left : left + width].unsqueeze(0)
-    return F.interpolate(value, size=size, mode="bilinear", align_corners=False, antialias=True)[0]
+    return F.interpolate(value, size=size, mode="bilinear", align_corners=False, antialias=True)[0].clamp_(0, 1)
 
 
 def _masked_area_resize(

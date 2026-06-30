@@ -24,6 +24,7 @@ from jepa4d.evaluation.phase2f_data_cache import (
     validate_sun_development_target_cache,
     write_cache,
 )
+from jepa4d.evaluation.phase2f_data_cache import _resize_rgb as resize_sun_rgb
 from scripts.build_phase2f_data_cache import WANDB_RECEIPT_SCHEMA, _finish_online_wandb, build_receipt
 
 
@@ -64,6 +65,15 @@ def test_input_cache_contains_exact_profiles_and_no_targets(input_payload: dict[
     assert audit["permutation_matrix_change_fraction"] == 1.0
     assert "targets" not in input_payload
     validate_sun_development_input_cache(input_payload)
+
+
+def test_antialiased_sun_rgb_resize_is_clamped_to_valid_range() -> None:
+    image = torch.zeros(3, 17, 19)
+    image[:, ::2, ::2] = 1.0
+    resized = resize_sun_rgb(image, (0, 0, 17, 19), (384, 384))
+    assert resized.shape == (3, 384, 384)
+    assert float(resized.min()) >= 0.0
+    assert float(resized.max()) <= 1.0
 
 
 def test_target_and_feature_payloads_are_physically_separate(
