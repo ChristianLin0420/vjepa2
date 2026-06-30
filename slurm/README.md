@@ -170,3 +170,42 @@ all identities before the runner starts. Postflight requires exactly thirteen
 result rows, twelve checkpoints, 720 history rows, complete per-frame and
 per-sequence metrics, a self-contained interactive report, a bijective artifact
 manifest, and a backend-confirmed online W&B receipt.
+
+## Governed consumed-TUM official-mini smoke
+
+The post-Wave-A smoke is intentionally narrower than the historical Phase 2b
+training chain. It replays only the eight already-consumed
+`freiburg1_xyz` test frames, extracts them into ephemeral temporary storage
+selected by Python from the hash-verified archive, and runs a locally supplied
+VGGT checkpoint whose file-tree identity is checked for stability and bound
+into the receipts. It publishes aggregate-only diagnostics to online W&B. This
+is an integrity and regression check, not fresh held-out evidence, an
+architecture comparison, or authorization for formal training.
+
+The submission wrapper is the only supported entrypoint. It rejects a dirty or
+uncommitted repository, any pre-existing output path, unsafe names, and eight or
+more active jobs/tasks owned by the authenticated user. Its `squeue -r` query
+expands array elements. A lock in the user's shared home serializes invocations
+of this supported wrapper across login nodes that mount the same home; it cannot
+serialize unrelated submission tools. The job verifies the actual
+one-node/one-task/one-GPU allocation before opening the archive or model. The
+runner publishes a preliminary online W&B run marked pending-postflight. Strict
+postflight resumes that exact run and publishes terminal pass evidence only
+after the complete preliminary artifact set validates; it then verifies the
+expanded terminal artifact set again.
+
+```bash
+export JEPA4D_TUM_ARCHIVE="$PWD/checkpoints/datasets/rgbd_dataset_freiburg1_xyz.tgz"
+export JEPA4D_VGGT_CHECKPOINT="$PWD/checkpoints/phase2b_assets/VGGT-1B"
+export JEPA4D_WANDB_ENTITY="your-approved-entity"
+export JEPA4D_WANDB_PROJECT=jepa4d-worldmodel
+bash slurm/submit_geometry_official_mini.sh
+```
+
+Authentication must already be available through the submitter's home (for
+example, a mode-0600 netrc); never export or embed a W&B key in a script. The
+wrapper deliberately accepts no extracted-dataset root. Success requires the
+terminal content-addressed receipt, not merely a zero exit from inference or a
+preliminary W&B upload. Keep the output directory immutable and use its
+execution, postflight, and terminal receipts when updating the experiment
+record.

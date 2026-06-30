@@ -10,6 +10,7 @@ import pytest
 from jepa4d.evaluation.failure_taxonomy import EvidenceLevel as SharedEvidenceLevel
 from jepa4d.visualization.validation_dashboard import (
     HTML_FILENAME,
+    IMMUTABLE_DIRECTORY_PREFIX,
     JSON_FILENAME,
     RECEIPT_FILENAME,
     SCHEMA_VERSION,
@@ -31,7 +32,9 @@ from jepa4d.visualization.validation_dashboard import (
     TargetAccess,
     ValidationReport,
     VisualizationDeclaration,
+    verify_immutable_validation_dashboard,
     verify_validation_dashboard,
+    write_immutable_validation_dashboard,
     write_validation_dashboard,
 )
 
@@ -130,6 +133,29 @@ def test_dashboard_bundle_receipt_detects_cross_generation_or_tampered_file(tmp_
     (tmp_path / HTML_FILENAME).write_text("tampered", encoding="utf-8")
     with pytest.raises(ValueError, match="does not match receipt"):
         verify_validation_dashboard(tmp_path)
+
+
+def test_immutable_dashboard_is_content_addressed_idempotent_and_no_clobber(tmp_path) -> None:
+    first = write_immutable_validation_dashboard(_report(), tmp_path)
+    assert first.directory.name == f"{IMMUTABLE_DIRECTORY_PREFIX}{first.generation_id}"
+    assert verify_immutable_validation_dashboard(first.directory)["generation_id"] == first.generation_id
+    before = first.json_path.stat().st_mtime_ns
+
+    same = write_immutable_validation_dashboard(_report(), tmp_path)
+    assert same == first
+    assert same.json_path.stat().st_mtime_ns == before
+
+    second = write_immutable_validation_dashboard(_report(report_id="another-generation"), tmp_path)
+    assert second.directory != first.directory
+    assert first.json_path.is_file()
+
+
+def test_immutable_dashboard_never_repairs_or_overwrites_tampered_generation(tmp_path) -> None:
+    bundle = write_immutable_validation_dashboard(_report(), tmp_path)
+    bundle.html_path.write_text("tampered", encoding="utf-8")
+    with pytest.raises(ValueError, match="does not match receipt"):
+        write_immutable_validation_dashboard(_report(), tmp_path)
+    assert bundle.html_path.read_text(encoding="utf-8") == "tampered"
 
 
 def test_concurrent_dashboard_writers_publish_one_receipt_bound_pair(tmp_path) -> None:

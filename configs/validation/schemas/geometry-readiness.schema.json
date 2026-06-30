@@ -1,0 +1,754 @@
+{
+  "$defs": {
+    "AccessOperation": {
+      "enum": [
+        "download",
+        "decode-smoke",
+        "training",
+        "tuning",
+        "calibration",
+        "checkpoint-selection",
+        "development-evaluation",
+        "external-evaluation",
+        "stress-evaluation",
+        "regression",
+        "mechanism-diagnostic",
+        "reporting",
+        "metadata-audit"
+      ],
+      "title": "AccessOperation",
+      "type": "string"
+    },
+    "BlockerCategory": {
+      "enum": [
+        "legal",
+        "governance",
+        "manifest",
+        "implementation",
+        "preregistration"
+      ],
+      "title": "BlockerCategory",
+      "type": "string"
+    },
+    "ClaimBoundary": {
+      "additionalProperties": false,
+      "properties": {
+        "prohibited": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Prohibited",
+          "type": "array"
+        },
+        "supported": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supported",
+          "type": "array"
+        }
+      },
+      "required": [
+        "supported",
+        "prohibited"
+      ],
+      "title": "ClaimBoundary",
+      "type": "object"
+    },
+    "CoreBindings": {
+      "additionalProperties": false,
+      "properties": {
+        "ledger": {
+          "$ref": "#/$defs/LedgerBinding"
+        },
+        "registry": {
+          "$ref": "#/$defs/RegistryBinding"
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeBinding"
+        },
+        "specification": {
+          "$ref": "#/$defs/SpecificationBinding"
+        }
+      },
+      "required": [
+        "registry",
+        "ledger",
+        "specification",
+        "runtime"
+      ],
+      "title": "CoreBindings",
+      "type": "object"
+    },
+    "GateBlocker": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/BlockerCategory"
+        },
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "category",
+        "description"
+      ],
+      "title": "GateBlocker",
+      "type": "object"
+    },
+    "GateTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "ledger_state": {
+          "$ref": "#/$defs/LedgerState"
+        },
+        "registry_target_state": {
+          "$ref": "#/$defs/TargetState"
+        },
+        "split_id": {
+          "title": "Split Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "split_id",
+        "registry_target_state",
+        "ledger_state"
+      ],
+      "title": "GateTarget",
+      "type": "object"
+    },
+    "GeometryGate": {
+      "additionalProperties": false,
+      "properties": {
+        "blockers": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GateBlocker"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "execution_ready": {
+          "title": "Execution Ready",
+          "type": "boolean"
+        },
+        "gate_id": {
+          "$ref": "#/$defs/GeometryGateId"
+        },
+        "metadata_ready": {
+          "title": "Metadata Ready",
+          "type": "boolean"
+        },
+        "notes": {
+          "minLength": 1,
+          "title": "Notes",
+          "type": "string"
+        },
+        "pack_authorizes_data_access": {
+          "const": false,
+          "title": "Pack Authorizes Data Access",
+          "type": "boolean"
+        },
+        "registered_operations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessOperation"
+          },
+          "title": "Registered Operations",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "sealed": {
+          "title": "Sealed",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/GeometryGateStatus"
+        },
+        "targets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GateTarget"
+          },
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "gate_id",
+        "status",
+        "metadata_ready",
+        "execution_ready",
+        "pack_authorizes_data_access",
+        "sealed",
+        "notes"
+      ],
+      "title": "GeometryGate",
+      "type": "object"
+    },
+    "GeometryGateId": {
+      "enum": [
+        "metadata-audit",
+        "consumed-tum-regression",
+        "sun-development",
+        "diode-external"
+      ],
+      "title": "GeometryGateId",
+      "type": "string"
+    },
+    "GeometryGateStatus": {
+      "enum": [
+        "audit-ready",
+        "partial-runtime-implemented",
+        "policy-blocked",
+        "sealed-blocked"
+      ],
+      "title": "GeometryGateStatus",
+      "type": "string"
+    },
+    "LedgerBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "durability": {
+          "enum": [
+            "local-filesystem-best-effort",
+            "external-append-only"
+          ],
+          "title": "Durability",
+          "type": "string"
+        },
+        "event_store_sha256": {
+          "title": "Event Store Sha256",
+          "type": "string"
+        },
+        "externally_append_only": {
+          "title": "Externally Append Only",
+          "type": "boolean"
+        },
+        "file_sha256": {
+          "title": "File Sha256",
+          "type": "string"
+        },
+        "ledger_version": {
+          "title": "Ledger Version",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "jepa4d-consumed-test-ledger-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "semantic_sha256": {
+          "title": "Semantic Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "file_sha256",
+        "semantic_sha256",
+        "schema_version",
+        "ledger_version",
+        "event_store_sha256",
+        "durability",
+        "externally_append_only"
+      ],
+      "title": "LedgerBinding",
+      "type": "object"
+    },
+    "LedgerState": {
+      "enum": [
+        "planned-unavailable",
+        "available-unopened",
+        "sealed-unopened",
+        "server-only-unopened",
+        "consumed"
+      ],
+      "title": "LedgerState",
+      "type": "string"
+    },
+    "LegacyManifestGap": {
+      "additionalProperties": false,
+      "properties": {
+        "clean_clone_available": {
+          "title": "Clean Clone Available",
+          "type": "boolean"
+        },
+        "dataset_id": {
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "legacy_schema": {
+          "minLength": 1,
+          "title": "Legacy Schema",
+          "type": "string"
+        },
+        "migration_required": {
+          "const": true,
+          "title": "Migration Required",
+          "type": "boolean"
+        },
+        "registered_path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Registered Path",
+          "type": "string"
+        },
+        "registered_sha256": {
+          "title": "Registered Sha256",
+          "type": "string"
+        },
+        "repository_state": {
+          "$ref": "#/$defs/RepositoryState"
+        },
+        "scope_gap": {
+          "minLength": 1,
+          "title": "Scope Gap",
+          "type": "string"
+        },
+        "split_id": {
+          "title": "Split Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "split_id",
+        "registered_path",
+        "registered_sha256",
+        "repository_state",
+        "clean_clone_available",
+        "legacy_schema",
+        "scope_gap",
+        "migration_required"
+      ],
+      "title": "LegacyManifestGap",
+      "type": "object"
+    },
+    "RegistryBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "file_sha256": {
+          "title": "File Sha256",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "portfolio_version": {
+          "title": "Portfolio Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "jepa4d-validation-registry-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "semantic_sha256": {
+          "title": "Semantic Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "file_sha256",
+        "semantic_sha256",
+        "schema_version",
+        "portfolio_version"
+      ],
+      "title": "RegistryBinding",
+      "type": "object"
+    },
+    "RepositoryState": {
+      "enum": [
+        "tracked-legacy",
+        "ignored-local-receipt"
+      ],
+      "title": "RepositoryState",
+      "type": "string"
+    },
+    "RuntimeBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/RuntimeFileBinding"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "scope": {
+          "const": "consumed-phase2b-official-smoke",
+          "title": "Scope",
+          "type": "string"
+        },
+        "terminal_receipt": {
+          "const": "not-bound",
+          "title": "Terminal Receipt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "terminal_receipt",
+        "files"
+      ],
+      "title": "RuntimeBinding",
+      "type": "object"
+    },
+    "RuntimeFileBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "file_sha256": {
+          "title": "File Sha256",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "implementation",
+            "test"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "file_sha256",
+        "role"
+      ],
+      "title": "RuntimeFileBinding",
+      "type": "object"
+    },
+    "SpecificationBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "file_sha256": {
+          "title": "File Sha256",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "const": "proposed-not-preregistered",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "file_sha256",
+        "status"
+      ],
+      "title": "SpecificationBinding",
+      "type": "object"
+    },
+    "SunFamilyOverlap": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_overlap_count": {
+          "minimum": 1,
+          "title": "Exact Overlap Count",
+          "type": "integer"
+        },
+        "family": {
+          "enum": [
+            "kv1",
+            "kv2",
+            "realsense",
+            "xtion"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "phase2e_selected_count": {
+          "minimum": 1,
+          "title": "Phase2E Selected Count",
+          "type": "integer"
+        },
+        "phase2f_selected_count": {
+          "minimum": 1,
+          "title": "Phase2F Selected Count",
+          "type": "integer"
+        },
+        "relationship": {
+          "enum": [
+            "all-phase2e-reused",
+            "phase2f-subset-of-phase2e"
+          ],
+          "title": "Relationship",
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "phase2e_selected_count",
+        "phase2f_selected_count",
+        "exact_overlap_count",
+        "relationship"
+      ],
+      "title": "SunFamilyOverlap",
+      "type": "object"
+    },
+    "SunHistoricalOverlap": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "const": "sun-rgbd.geometry-development",
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "exactness": {
+          "const": "historical-assertion-selection-hash-not-clean-clone-verifiable",
+          "title": "Exactness",
+          "type": "string"
+        },
+        "families": {
+          "items": {
+            "$ref": "#/$defs/SunFamilyOverlap"
+          },
+          "title": "Families",
+          "type": "array"
+        },
+        "kind": {
+          "const": "sun-family-membership",
+          "title": "Kind",
+          "type": "string"
+        },
+        "limitation": {
+          "minLength": 1,
+          "title": "Limitation",
+          "type": "string"
+        },
+        "phase2e_manifest_sha256": {
+          "title": "Phase2E Manifest Sha256",
+          "type": "string"
+        },
+        "phase2f_selection_sha256": {
+          "title": "Phase2F Selection Sha256",
+          "type": "string"
+        },
+        "supports_fresh_external_claim": {
+          "const": false,
+          "title": "Supports Fresh External Claim",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "dataset_id",
+        "phase2e_manifest_sha256",
+        "phase2f_selection_sha256",
+        "exactness",
+        "families",
+        "supports_fresh_external_claim",
+        "limitation"
+      ],
+      "title": "SunHistoricalOverlap",
+      "type": "object"
+    },
+    "TargetState": {
+      "enum": [
+        "open",
+        "sealed",
+        "server-only",
+        "unavailable",
+        "not-applicable"
+      ],
+      "title": "TargetState",
+      "type": "string"
+    },
+    "TumHistoricalOverlap": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "const": "tum-rgbd.geometry-regression",
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "exact_overlap_count": {
+          "minimum": 1,
+          "title": "Exact Overlap Count",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "tum-frame-index",
+          "title": "Kind",
+          "type": "string"
+        },
+        "phase2b_manifest_sha256": {
+          "title": "Phase2B Manifest Sha256",
+          "type": "string"
+        },
+        "phase2c_manifest_sha256": {
+          "title": "Phase2C Manifest Sha256",
+          "type": "string"
+        },
+        "prior_roles": {
+          "items": {
+            "$ref": "#/$defs/TumPriorRoleOverlap"
+          },
+          "title": "Prior Roles",
+          "type": "array"
+        },
+        "recording": {
+          "const": "freiburg1_xyz",
+          "title": "Recording",
+          "type": "string"
+        },
+        "reused_by_phase2c_role": {
+          "const": "train",
+          "title": "Reused By Phase2C Role",
+          "type": "string"
+        },
+        "supports_fresh_external_claim": {
+          "const": false,
+          "title": "Supports Fresh External Claim",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "dataset_id",
+        "recording",
+        "phase2b_manifest_sha256",
+        "phase2c_manifest_sha256",
+        "reused_by_phase2c_role",
+        "prior_roles",
+        "exact_overlap_count",
+        "supports_fresh_external_claim"
+      ],
+      "title": "TumHistoricalOverlap",
+      "type": "object"
+    },
+    "TumPriorRoleOverlap": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_indices_reused_by_phase2c_train": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Frame Indices Reused By Phase2C Train",
+          "type": "array"
+        },
+        "phase2b_role": {
+          "enum": [
+            "train",
+            "validation",
+            "test"
+          ],
+          "title": "Phase2B Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase2b_role",
+        "frame_indices_reused_by_phase2c_train"
+      ],
+      "title": "TumPriorRoleOverlap",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bindings": {
+      "$ref": "#/$defs/CoreBindings"
+    },
+    "claim_boundary": {
+      "$ref": "#/$defs/ClaimBoundary"
+    },
+    "gates": {
+      "items": {
+        "$ref": "#/$defs/GeometryGate"
+      },
+      "title": "Gates",
+      "type": "array"
+    },
+    "historical_overlaps": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "sun-family-membership": "#/$defs/SunHistoricalOverlap",
+            "tum-frame-index": "#/$defs/TumHistoricalOverlap"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/SunHistoricalOverlap"
+          },
+          {
+            "$ref": "#/$defs/TumHistoricalOverlap"
+          }
+        ]
+      },
+      "title": "Historical Overlaps",
+      "type": "array"
+    },
+    "legacy_manifest_gaps": {
+      "items": {
+        "$ref": "#/$defs/LegacyManifestGap"
+      },
+      "title": "Legacy Manifest Gaps",
+      "type": "array"
+    },
+    "pack_version": {
+      "title": "Pack Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "jepa4d-phase2-geometry-readiness-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "const": "metadata-only-no-target-access",
+      "title": "Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "pack_version",
+    "scope",
+    "bindings",
+    "gates",
+    "legacy_manifest_gaps",
+    "historical_overlaps",
+    "claim_boundary"
+  ],
+  "title": "GeometryReadinessPack",
+  "type": "object"
+}

@@ -253,8 +253,15 @@ normal interval `z * sqrt(exp(v_calibrated))`.
 
 Coverage should be shown as a curve or table, not reduced to one favorable level. Phase 2e also reports a reliability
 error that summarizes nominal-versus-empirical gaps; lower is better. The current Phase 2f evaluator emits the four pooled
-coverage points but does not emit a scalar reliability error or an empirical regression-calibration curve. A future report
-must compute those explicitly under a new schema rather than imply that they already exist.
+coverage points but does not emit a scalar reliability error or an empirical regression-calibration curve. The separate
+post-Wave-A `jepa4d-geometry-quality-metrics-v1` contract now emits per-frame coverage, a four-level mean absolute coverage
+gap, equal-group coverage, and an explicitly descriptive pooled risk-coverage curve. Historical Phase 2f artifacts retain
+their original schema and must not be relabeled or silently backfilled with these newer fields.
+
+That post-Wave-A implementation is currently a tested pure evaluator, not a governed experiment runner. Its grouping,
+assignment, validity-policy, and optional calibration digests are caller-supplied assertions until a future governed
+wrapper loads and validates the corresponding typed receipts. The evaluator's output alone therefore cannot support a
+formal architecture claim.
 
 ### 5.4 Risk-coverage and AUSE
 
@@ -588,6 +595,7 @@ Minimum geometry visual set:
 ## 18. Authoritative implementation references
 
 - [Phase 2f depth, calibration, coverage, and AUSE metrics](../jepa4d/evaluation/phase2f_metrics.py)
+- [Post-Wave-A quality-first geometry metric contract](../jepa4d/evaluation/geometry_quality.py)
 - [Phase 2f losses and robust detached-scale target](../jepa4d/training/phase2f_losses.py)
 - [Phase 2f gradient firewall and strict reload](../jepa4d/training/phase2f_training.py)
 - [Paired camera-control construction](../jepa4d/evaluation/phase2f_camera_controls.py)

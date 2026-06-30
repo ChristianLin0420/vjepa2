@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from jepa4d.validation._content import sha256_file
+from jepa4d.validation.geometry_readiness import (
+    GeometryGateId,
+    GeometryGateStatus,
+    GeometryReadinessPack,
+    RepositoryState,
+    SunHistoricalOverlap,
+    TumHistoricalOverlap,
+    load_and_validate_geometry_readiness,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+PACK_PATH = ROOT / "configs/validation/geometry/phase2_readiness_v1.yaml"
+
+
+def _pack() -> GeometryReadinessPack:
+    return GeometryReadinessPack.load(PACK_PATH)
+
+
+def test_checked_in_pack_is_bound_and_fail_closed_without_dataset_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    forbidden_data_root = tmp_path / "dataset-root-must-not-be-resolved"
+    forbidden_cache_root = tmp_path / "cache-root-must-not-be-resolved"
+    forbidden_diode_root = tmp_path / "diode-root-must-not-be-resolved"
+    monkeypatch.setenv("JEPA4D_DATA_ROOT", str(forbidden_data_root))
+    monkeypatch.setenv("JEPA4D_CACHE_ROOT", str(forbidden_cache_root))
+    monkeypatch.setenv("JEPA4D_DIODE_SEALED_ROOT", str(forbidden_diode_root))
+
+    pack = load_and_validate_geometry_readiness(PACK_PATH, ROOT)
+    assert pack.status_by_gate() == {
+        "metadata-audit": "audit-ready",
+        "consumed-tum-regression": "partial-runtime-implemented",
+        "sun-development": "policy-blocked",
+        "diode-external": "sealed-blocked",
+    }
+    assert not any(gate.execution_ready or gate.pack_authorizes_data_access for gate in pack.gates)
+    assert not forbidden_data_root.exists()
+    assert not forbidden_cache_root.exists()
+    assert not forbidden_diode_root.exists()
+
+
+def test_gate_targets_operations_and_diode_seal_are_exact() -> None:
+    pack = _pack()
+    gates = {gate.gate_id: gate for gate in pack.gates}
+    metadata = gates[GeometryGateId.METADATA_AUDIT]
+    assert metadata.status is GeometryGateStatus.AUDIT_READY
+    assert metadata.targets == () and metadata.registered_operations == frozenset()
+
+    tum = gates[GeometryGateId.CONSUMED_TUM_REGRESSION]
+    assert tum.status is GeometryGateStatus.PARTIAL_RUNTIME_IMPLEMENTED
+    assert {target.ledger_state.value for target in tum.targets} == {"consumed"}
+    assert {operation.value for operation in tum.registered_operations} == {
+        "regression",
+        "mechanism-diagnostic",
+        "reporting",
+    }
+    assert "TUM_GOVERNED_RUNTIME_COVERAGE_INCOMPLETE" in {blocker.code for blocker in tum.blockers}
+
+    sun = gates[GeometryGateId.SUN_DEVELOPMENT]
+    assert {target.ledger_state.value for target in sun.targets} == {"consumed"}
+    assert "SUN_CONSTITUENT_LICENSE_PENDING" in {blocker.code for blocker in sun.blockers}
+    assert "SUN_PHASE2F_RECEIPT_NOT_IN_CLEAN_CLONE" in {blocker.code for blocker in sun.blockers}
+
+    diode = gates[GeometryGateId.DIODE_EXTERNAL]
+    assert diode.sealed and diode.status is GeometryGateStatus.SEALED_BLOCKED
+    assert len(diode.targets) == 1
+    assert diode.targets[0].registry_target_state.value == "sealed"
+    assert diode.targets[0].ledger_state.value == "sealed-unopened"
+    assert {blocker.code for blocker in diode.blockers} >= {
+        "DIODE_SIGNER_PENDING",
+        "APPEND_ONLY_EVENT_STORE_MISSING",
+        "DIODE_EXTERNAL_PREREGISTRATION_MISSING",
+    }
+
+
+def test_runtime_binding_is_exact_hash_bound_and_has_no_terminal_receipt() -> None:
+    runtime = _pack().bindings.runtime
+    assert runtime.scope == "consumed-phase2b-official-smoke"
+    assert runtime.terminal_receipt == "not-bound"
+    assert [(value.path, value.role) for value in runtime.files] == [
+        ("jepa4d/validation/geometry_official_mini.py", "implementation"),
+        ("jepa4d/validation/wandb.py", "implementation"),
+        ("jepa4d/visualization/validation_dashboard.py", "implementation"),
+        ("slurm/geometry_official_mini.sbatch", "implementation"),
+        ("slurm/submit_geometry_official_mini.sh", "implementation"),
+        ("slurm/validate_geometry_official_mini.py", "implementation"),
+        ("jepa4d/tests/test_geometry_official_mini.py", "test"),
+        ("jepa4d/tests/test_geometry_official_mini_postflight.py", "test"),
+        ("jepa4d/tests/test_geometry_official_mini_slurm.py", "test"),
+        ("jepa4d/tests/test_validation_wandb.py", "test"),
+        ("jepa4d/tests/test_validation_dashboard.py", "test"),
+    ]
+    for binding in runtime.files:
+        assert sha256_file(ROOT / binding.path) == binding.file_sha256
+
+
+def test_historical_overlap_is_typed_exact_and_never_fresh() -> None:
+    pack = _pack()
+    sun, tum = pack.historical_overlaps
+    assert isinstance(sun, SunHistoricalOverlap)
+    assert isinstance(tum, TumHistoricalOverlap)
+    assert not sun.supports_fresh_external_claim
+    assert {value.family: value.exact_overlap_count for value in sun.families} == {
+        "kv1": 128,
+        "kv2": 128,
+        "realsense": 128,
+        "xtion": 128,
+    }
+    assert sun.phase2f_selection_sha256 == "01a8c4577289034db86b63c4f6e9eaef9afd7aa636a9d952e9878dae3758bca6"
+
+    assert not tum.supports_fresh_external_claim
+    assert tum.exact_overlap_count == 8
+    assert {value.phase2b_role: value.frame_indices_reused_by_phase2c_train for value in tum.prior_roles} == {
+        "train": (35, 172, 248, 384, 483),
+        "validation": (520, 631),
+        "test": (779,),
+    }
+
+
+def test_clean_clone_audit_distinguishes_tracked_legacy_from_ignored_receipt() -> None:
+    pack = _pack()
+    gaps = {(gap.dataset_id, gap.split_id): gap for gap in pack.legacy_manifest_gaps}
+    phase2f = gaps[("sun-rgbd.geometry-development", "sun-rgbd.phase2f-four-family-development")]
+    assert phase2f.repository_state is RepositoryState.IGNORED_LOCAL_RECEIPT
+    assert not phase2f.clean_clone_available
+    tracked = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "--error-unmatch", phase2f.registered_path],
+        check=False,
+        capture_output=True,
+    )
+    assert tracked.returncode != 0
+    for key, gap in gaps.items():
+        if key == ("sun-rgbd.geometry-development", "sun-rgbd.phase2f-four-family-development"):
+            continue
+        assert gap.repository_state is RepositoryState.TRACKED_LEGACY
+        assert gap.clean_clone_available
+        assert (ROOT / gap.registered_path).is_file()
+
+
+def test_stale_core_binding_fails_repository_validation() -> None:
+    value = _pack().model_dump(mode="json")
+    value["bindings"]["registry"]["file_sha256"] = "0" * 64
+    stale = GeometryReadinessPack.model_validate(value)
+    with pytest.raises(ValueError, match="repository metadata SHA-256 mismatch"):
+        stale.validate_repository(ROOT)
+
+
+def test_runtime_binding_cannot_omit_a_canonical_file() -> None:
+    value = _pack().model_dump(mode="json")
+    value["bindings"]["runtime"]["files"].pop()
+    with pytest.raises(ValidationError, match="exact canonical implementation and test files in order"):
+        GeometryReadinessPack.model_validate(value)
+
+
+def test_stale_runtime_binding_fails_repository_validation() -> None:
+    value = _pack().model_dump(mode="json")
+    value["bindings"]["runtime"]["files"][0]["file_sha256"] = "0" * 64
+    stale = GeometryReadinessPack.model_validate(value)
+    with pytest.raises(ValueError, match="repository metadata SHA-256 mismatch"):
+        stale.validate_repository(ROOT)
+
+
+def test_pack_cannot_claim_execution_or_unsealed_diode() -> None:
+    execution_value = _pack().model_dump(mode="json")
+    execution_value["gates"][1]["execution_ready"] = True
+    with pytest.raises(ValidationError, match="cannot declare execution readiness"):
+        GeometryReadinessPack.model_validate(execution_value)
+
+    unsealed_value = _pack().model_dump(mode="json")
+    unsealed_value["gates"][3]["sealed"] = False
+    with pytest.raises(ValidationError, match="only the DIODE external gate may be marked sealed"):
+        GeometryReadinessPack.model_validate(unsealed_value)
+
+
+def test_duplicate_yaml_keys_are_rejected(tmp_path: Path) -> None:
+    duplicate = tmp_path / "duplicate-readiness.yaml"
+    duplicate.write_text(PACK_PATH.read_text(encoding="utf-8") + "pack_version: shadow-v2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate YAML key 'pack_version'"):
+        GeometryReadinessPack.load(duplicate)
+
+
+def test_checked_in_json_schema_matches_runtime_model() -> None:
+    schema_path = ROOT / "configs/validation/schemas/geometry-readiness.schema.json"
+    assert json.loads(schema_path.read_text(encoding="utf-8")) == GeometryReadinessPack.model_json_schema()

@@ -1,0 +1,269 @@
+schema_version: jepa4d-phase2-geometry-readiness-v1
+pack_version: 2026-06-30-wave-a-v1
+scope: metadata-only-no-target-access
+
+bindings:
+  registry:
+    path: configs/validation/dataset_registry.yaml
+    file_sha256: 3a71e17b5cbc52eca7b7ca9bb11ee576c6519ca9f3940eda0627c2c2ec5e6f7f
+    semantic_sha256: 4dd75d40bed2228e3b60fb68d8ec325b6a48bf7b0be2d197ab64334ff4c7b11a
+    schema_version: jepa4d-validation-registry-v1
+    portfolio_version: 2026-06-30-wave-a-v1
+  ledger:
+    path: configs/validation/consumed_test_ledger.yaml
+    file_sha256: 9b31001599d867f26b07ecc6f67e6405725b861ff3f6d2d678bb593ff1f7f800
+    semantic_sha256: 1b05f49f621d0cba35fce73075b6475265be9e4ee2f256a3bb2636cef4e1df63
+    schema_version: jepa4d-consumed-test-ledger-v1
+    ledger_version: 2026-06-30-wave-a-v1
+    event_store_sha256: 59ef2ace845ad76301913919baf636a75b3858d0d8282e494cb670c7d80591b0
+    durability: local-filesystem-best-effort
+    externally_append_only: false
+  specification:
+    path: docs/validation/PHASE2_GEOMETRY.md
+    file_sha256: cfda82d71842fbfcc7ccbe217f336bc09c9a55989e0cc764dbea8b9e8652a6d9
+    status: proposed-not-preregistered
+  runtime:
+    scope: consumed-phase2b-official-smoke
+    terminal_receipt: not-bound
+    files:
+      - path: jepa4d/validation/geometry_official_mini.py
+        file_sha256: 95f62be6cec2c4832a05c04d19734f1b03e6a92c4f7113203839e9059234e220
+        role: implementation
+      - path: jepa4d/validation/wandb.py
+        file_sha256: e7663a53c6cf54ef585306860d39d37d6487eb9062b77be876e7a7701ffa44be
+        role: implementation
+      - path: jepa4d/visualization/validation_dashboard.py
+        file_sha256: a3f736d2d9785fb864ebcb61e4e096fddcfffbee1c7546d46ac704d4f817ac20
+        role: implementation
+      - path: slurm/geometry_official_mini.sbatch
+        file_sha256: 6107288ae113653d09d77e3fb2c09649225735a7da4d1c0acae9cd63a108b17f
+        role: implementation
+      - path: slurm/submit_geometry_official_mini.sh
+        file_sha256: 36ffde554aa89fa92c890c43afcf74e65340606655e016e00e089abc5f6e51de
+        role: implementation
+      - path: slurm/validate_geometry_official_mini.py
+        file_sha256: 80c8e591965b3574b77d35c6fdb34673d734c8f71f6153da5979d57cc3fb2c2a
+        role: implementation
+      - path: jepa4d/tests/test_geometry_official_mini.py
+        file_sha256: f59fc4a57c07a96e6ab227d30438e1de8980ca368304ea7e060462522d00893a
+        role: test
+      - path: jepa4d/tests/test_geometry_official_mini_postflight.py
+        file_sha256: 70eca6da73ca737b8b8579c01bfd52080cbc9711a1c0b6101caf27927cfb21cc
+        role: test
+      - path: jepa4d/tests/test_geometry_official_mini_slurm.py
+        file_sha256: 77161816504422581298ecf28c7594a3da4ec02775aff9e4abe6d41d9b661490
+        role: test
+      - path: jepa4d/tests/test_validation_wandb.py
+        file_sha256: 68767d05683768281ca9c2a1c0ab29ffbf37299923ab8bad9ede2528410fea30
+        role: test
+      - path: jepa4d/tests/test_validation_dashboard.py
+        file_sha256: d343da1c7214c90f84d53e54dd1873df3781b857eb26ddbc63154ae329a331ed
+        role: test
+
+gates:
+  - gate_id: metadata-audit
+    status: audit-ready
+    metadata_ready: true
+    execution_ready: false
+    pack_authorizes_data_access: false
+    sealed: false
+    targets: []
+    registered_operations: []
+    blockers: []
+    notes: The checked-in registry, ledger, Phase 2 specification, and tracked legacy metadata can be audited without resolving a dataset root.
+
+  - gate_id: consumed-tum-regression
+    status: partial-runtime-implemented
+    metadata_ready: true
+    execution_ready: false
+    pack_authorizes_data_access: false
+    sealed: false
+    targets:
+      - dataset_id: tum-rgbd.geometry-regression
+        split_id: tum-rgbd.phase2b-freiburg1-xyz-test
+        registry_target_state: open
+        ledger_state: consumed
+      - dataset_id: tum-rgbd.geometry-regression
+        split_id: tum-rgbd.phase2c-freiburg3-test
+        registry_target_state: open
+        ledger_state: consumed
+    registered_operations: [regression, mechanism-diagnostic, reporting]
+    blockers:
+      - code: TUM_LEGACY_MANIFEST_NOT_WAVE_A
+        category: manifest
+        description: The registered TUM files are composite legacy protocol manifests rather than per-split jepa4d-split-manifest-v1 artifacts; this limits evidence promotion but does not prohibit the exact consumed Phase 2b regression.
+      - code: TUM_GOVERNED_RUNTIME_COVERAGE_INCOMPLETE
+        category: implementation
+        description: A hash-bound, test-covered governed runtime exists only for the Phase 2b split; Phase 2c has no equivalent clean-commit Slurm/W&B/postflight path, and no terminal execution receipt is bound into this pack.
+    notes: A hash-bound clean-commit runner authorizes only the registered consumed Phase 2b regression before resolving the verified archive and can support integration/regression diagnostics only. Phase 2c remains unwrapped, neither split has Wave A manifest proof, and no fresh transfer, model-selection, or promotion claim is supported.
+
+  - gate_id: sun-development
+    status: policy-blocked
+    metadata_ready: true
+    execution_ready: false
+    pack_authorizes_data_access: false
+    sealed: false
+    targets:
+      - dataset_id: sun-rgbd.geometry-development
+        split_id: sun-rgbd.phase2e-kv2-test
+        registry_target_state: open
+        ledger_state: consumed
+      - dataset_id: sun-rgbd.geometry-development
+        split_id: sun-rgbd.phase2f-four-family-development
+        registry_target_state: open
+        ledger_state: consumed
+    registered_operations: [development-evaluation, regression, mechanism-diagnostic, reporting]
+    blockers:
+      - code: SUN_CONSTITUENT_LICENSE_PENDING
+        category: legal
+        description: No approved blanket license covers every selected SUN RGB-D constituent source; the registry legal audit remains pending.
+      - code: SUN_IDENTITY_ONLY_SELECTION_UNFROZEN
+        category: governance
+        description: The balanced four-family identity-only selection algorithm is not frozen under the Wave A target-isolation contract.
+      - code: SUN_INVALID_DEPTH_POLICY_UNFROZEN
+        category: preregistration
+        description: The insufficient-valid-depth failure or replacement policy is not preregistered.
+      - code: SUN_LEGACY_MANIFEST_NOT_WAVE_A
+        category: manifest
+        description: The Phase 2e file combines train, validation, and test rows and stores target-derived validation statistics instead of one target-free manifest per registered split.
+      - code: SUN_PHASE2F_RECEIPT_NOT_IN_CLEAN_CLONE
+        category: manifest
+        description: The Phase 2f registered id_manifest path is an ignored local output receipt, not a repository-tracked portable membership artifact.
+      - code: SUN_GOVERNED_TARGET_SEPARATION_MISSING
+        category: implementation
+        description: Existing enumeration and loading APIs expose depth paths and are not gated by the registry-and-ledger access controller.
+      - code: PHASE2_PREREGISTRATION_MISSING
+        category: preregistration
+        description: The Phase 2 geometry specification remains proposed and has not been frozen as a hash-bound formal preregistration.
+    notes: All named SUN families are consumed development evidence; this pack does not authorize further decoding, cache construction, training, or evaluation.
+
+  - gate_id: diode-external
+    status: sealed-blocked
+    metadata_ready: true
+    execution_ready: false
+    pack_authorizes_data_access: false
+    sealed: true
+    targets:
+      - dataset_id: diode.geometry-external
+        split_id: diode.validation-external
+        registry_target_state: sealed
+        ledger_state: sealed-unopened
+    registered_operations: [metadata-audit, external-evaluation, reporting]
+    blockers:
+      - code: DIODE_SIGNER_PENDING
+        category: governance
+        description: No trusted Ed25519 key ID and public key have been approved in the registry.
+      - code: APPEND_ONLY_EVENT_STORE_MISSING
+        category: governance
+        description: The bound ledger uses rollbackable local-filesystem-best-effort state rather than an approved externally append-only store.
+      - code: SUN_SURVIVOR_NOT_FROZEN
+        category: preregistration
+        description: No single SUN-selected architecture, paired M0, checkpoint, clean commit, configuration, and distinct calibrator have been frozen.
+      - code: DIODE_EXTERNAL_PREREGISTRATION_MISSING
+        category: preregistration
+        description: The one-shot external metric, domain aggregation, grouping, failure, qualitative-ID, and effect-margin protocol is not preregistered.
+      - code: DIODE_ENUMERATION_NOT_FROZEN
+        category: manifest
+        description: No target-free portable artifact freezes the exact official validation enumeration, expected units, or independent grouping policy.
+      - code: DIODE_GOVERNED_ADAPTER_ABSENT
+        category: implementation
+        description: No DIODE adapter may be constructed before the atomic signed first-open transition is approved and executed.
+    notes: DIODE remains sealed and unconsumed; this pack permits validation of prior metadata only and never receives or resolves the archive path.
+
+legacy_manifest_gaps:
+  - dataset_id: sun-rgbd.geometry-development
+    split_id: sun-rgbd.phase2e-kv2-test
+    registered_path: jepa4d/config/benchmarks/manifests/sun_rgbd_phase2e_sensor_blocked_v1.yaml
+    registered_sha256: 174716f4f1bd4a4b709f2a4b1a1cd4dca4fd17ef34cc543c1fc8985b75b44c92
+    repository_state: tracked-legacy
+    clean_clone_available: true
+    legacy_schema: jepa4d-sunrgbd-sensor-blocked-v1
+    scope_gap: The file contains 640 train, validation, and test samples while the registered split denotes only the 128 Kinect-v2 development-test scenes; it also contains target-derived depth statistics.
+    migration_required: true
+
+  - dataset_id: sun-rgbd.geometry-development
+    split_id: sun-rgbd.phase2f-four-family-development
+    registered_path: outputs/jepa4d_phase2f/043d074d-20260630T043658Z/cache/cache_receipt.json
+    registered_sha256: 9b22579d9c7e3c9789cbaabfe34e1592bfbf6ced54f6129f48453d123287e400
+    repository_state: ignored-local-receipt
+    clean_clone_available: false
+    legacy_schema: jepa4d-phase2f-sun-dev-cache-receipt-v1
+    scope_gap: The ignored local receipt binds caches and absolute execution paths but is not a portable target-free 512-scene membership artifact available in a clean clone.
+    migration_required: true
+
+  - dataset_id: tum-rgbd.geometry-regression
+    split_id: tum-rgbd.phase2b-freiburg1-xyz-test
+    registered_path: jepa4d/config/benchmarks/manifests/tum_rgbd_phase2b_v1.yaml
+    registered_sha256: 84feb816ae3cabbd65a7c4d3cd2e00ad8ffbe1108fd762ce4cead59a584f5fb5
+    repository_state: tracked-legacy
+    clean_clone_available: true
+    legacy_schema: legacy-tum-phase2b-v1.0.1
+    scope_gap: The file combines train, validation, and test indices for one recording and lacks Wave A portfolio binding, target-isolation evidence, clusters, and typed unit rows.
+    migration_required: true
+
+  - dataset_id: tum-rgbd.geometry-regression
+    split_id: tum-rgbd.phase2c-freiburg3-test
+    registered_path: jepa4d/config/benchmarks/manifests/tum_rgbd_phase2c_cross_sequence_v1.yaml
+    registered_sha256: 9d3c892454b4036710b6604d278ad37fdcd6a8e5cee91ac8586411d8de213615
+    repository_state: tracked-legacy
+    clean_clone_available: true
+    legacy_schema: jepa4d-tum-cross-sequence-v1
+    scope_gap: The file combines two training, one validation, and two test recordings while the registered split denotes only the two Freiburg3 regression recordings.
+    migration_required: true
+
+historical_overlaps:
+  - kind: sun-family-membership
+    dataset_id: sun-rgbd.geometry-development
+    phase2e_manifest_sha256: 174716f4f1bd4a4b709f2a4b1a1cd4dca4fd17ef34cc543c1fc8985b75b44c92
+    phase2f_selection_sha256: 01a8c4577289034db86b63c4f6e9eaef9afd7aa636a9d952e9878dae3758bca6
+    exactness: historical-assertion-selection-hash-not-clean-clone-verifiable
+    families:
+      - family: kv1
+        phase2e_selected_count: 192
+        phase2f_selected_count: 128
+        exact_overlap_count: 128
+        relationship: phase2f-subset-of-phase2e
+      - family: kv2
+        phase2e_selected_count: 128
+        phase2f_selected_count: 128
+        exact_overlap_count: 128
+        relationship: all-phase2e-reused
+      - family: realsense
+        phase2e_selected_count: 128
+        phase2f_selected_count: 128
+        exact_overlap_count: 128
+        relationship: all-phase2e-reused
+      - family: xtion
+        phase2e_selected_count: 192
+        phase2f_selected_count: 128
+        exact_overlap_count: 128
+        relationship: phase2f-subset-of-phase2e
+    supports_fresh_external_claim: false
+    limitation: Individual Phase 2f sample IDs are committed by the selection hash but are not yet promoted into a target-free clean-clone membership artifact.
+
+  - kind: tum-frame-index
+    dataset_id: tum-rgbd.geometry-regression
+    recording: freiburg1_xyz
+    phase2b_manifest_sha256: 84feb816ae3cabbd65a7c4d3cd2e00ad8ffbe1108fd762ce4cead59a584f5fb5
+    phase2c_manifest_sha256: 9d3c892454b4036710b6604d278ad37fdcd6a8e5cee91ac8586411d8de213615
+    reused_by_phase2c_role: train
+    prior_roles:
+      - phase2b_role: train
+        frame_indices_reused_by_phase2c_train: [35, 172, 248, 384, 483]
+      - phase2b_role: validation
+        frame_indices_reused_by_phase2c_train: [520, 631]
+      - phase2b_role: test
+        frame_indices_reused_by_phase2c_train: [779]
+    exact_overlap_count: 8
+    supports_fresh_external_claim: false
+
+claim_boundary:
+  supported:
+    - Repository metadata for the current Phase 2 registry, ledger, specification, and tracked legacy manifests is internally bound and auditable.
+    - TUM and SUN results remain consumed historical or development evidence; TUM overlap is recomputable from tracked manifests, while the Phase 2f SUN overlap is a historical assertion committed by its recorded selection hash but unavailable for clean-clone recomputation.
+    - DIODE remains sealed according to the bound registry and ledger metadata.
+  prohibited:
+    - This pack does not authorize dataset access, decoding, cache access, training, regression execution, or evaluation.
+    - This pack does not establish SUN legal approval, a frozen Phase 2 preregistration, or scientific execution readiness.
+    - This pack does not authorize DIODE listing, extraction, sampling, decoding, hashing, statistics, visualization, caching, or external evaluation.
+    - No SUN or TUM result in this lineage is fresh external confirmation.

@@ -14,7 +14,9 @@ import json
 import math
 import os
 import re
+import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -28,6 +30,7 @@ BUNDLE_SCHEMA_VERSION = "jepa4d-validation-dashboard-bundle-v1"
 JSON_FILENAME = "validation_report.json"
 HTML_FILENAME = "validation_dashboard.html"
 RECEIPT_FILENAME = "validation_dashboard.receipt.json"
+IMMUTABLE_DIRECTORY_PREFIX = "validation-dashboard-"
 
 
 class DatasetRole(StrEnum):
@@ -315,6 +318,82 @@ class GovernanceBinding:
             raise ValueError("metric_gate_receipt_sha256 must be a lowercase SHA-256 digest")
 
 
+def wandb_summary_from_serializable(report: Mapping[str, Any]) -> dict[str, str | int | float]:
+    """Rebuild the exact aggregate W&B summary from a serialized report."""
+
+    datasets = report.get("datasets")
+    gate = report.get("gate")
+    completeness = report.get("completeness")
+    claim_boundary = report.get("claim_boundary")
+    visualizations = report.get("visualizations")
+    metrics = report.get("metrics")
+    if (
+        not isinstance(datasets, (list, tuple))
+        or not isinstance(gate, Mapping)
+        or not isinstance(completeness, Mapping)
+        or not isinstance(claim_boundary, Mapping)
+        or not isinstance(visualizations, (list, tuple))
+        or not isinstance(metrics, (list, tuple))
+    ):
+        raise ValueError("serialized validation report is incomplete for W&B summary reconstruction")
+    conditions = gate.get("conditions")
+    if not isinstance(conditions, (list, tuple)):
+        raise ValueError("serialized validation report lacks gate conditions")
+    governance = report.get("governance")
+    if governance is not None and not isinstance(governance, Mapping):
+        raise ValueError("serialized validation report has invalid governance")
+
+    payload: dict[str, str | int | float] = {
+        "validation/schema_version": str(report["schema_version"]),
+        "validation/report_id": str(report["report_id"]),
+        "validation/stage": str(report["stage"]),
+        "validation/evidence_level": str(report["evidence_level"]),
+        "validation/gate/name": str(gate["name"]),
+        "validation/gate/outcome": str(gate["outcome"]),
+        "validation/completeness/status": str(completeness["status"]),
+        "validation/completeness/accounted_fraction": float(completeness["accounted_fraction"]),
+        "validation/completeness/missing_cells": int(completeness["missing_cells"]),
+        "validation/resource_policy": str(report["resource_policy"]),
+        "validation/datasets/roles_json": json.dumps(
+            {str(dataset["dataset_id"]): str(dataset["role"]) for dataset in datasets}, sort_keys=True
+        ),
+        "validation/datasets/identities_json": json.dumps(
+            {
+                f"{dataset['dataset_id']}/{dataset['split']}": {
+                    "kind": dataset["identity_kind"],
+                    "sha256": dataset["identity_sha256"],
+                    "id_manifest_sha256": dataset["id_manifest_sha256"],
+                }
+                for dataset in datasets
+            },
+            sort_keys=True,
+        ),
+        "validation/claim/supported_json": json.dumps(claim_boundary["supported"]),
+        "validation/claim/prohibited_json": json.dumps(claim_boundary["prohibited"]),
+        "validation/dashboard/panels_json": json.dumps(
+            [declaration["panel_id"] for declaration in visualizations]
+        ),
+    }
+    if governance is not None:
+        payload.update(
+            {
+                "validation/governance/registry_sha256": str(governance["registry_sha256"]),
+                "validation/governance/base_ledger_sha256": str(governance["base_ledger_sha256"]),
+                "validation/governance/effective_ledger_sha256": str(governance["effective_ledger_sha256"]),
+                "validation/governance/status_sha256": str(governance["validation_status_sha256"]),
+            }
+        )
+        if governance.get("metric_gate_receipt_sha256") is not None:
+            payload["validation/governance/metric_gate_receipt_sha256"] = str(
+                governance["metric_gate_receipt_sha256"]
+            )
+    for condition in conditions:
+        payload[f"validation/gate/{condition['domain']}/{condition['name']}"] = int(condition["passed"])
+    for metric in metrics:
+        payload[f"validation/{metric['domain']}/{metric['name']}/{metric['split']}"] = float(metric["value"])
+    return payload
+
+
 @dataclass(frozen=True, slots=True)
 class ValidationReport:
     report_id: str
@@ -376,55 +455,18 @@ class ValidationReport:
 
     def wandb_summary_payload(self) -> dict[str, str | int | float]:
         """Return stable summary keys without importing or contacting W&B."""
-        payload: dict[str, str | int | float] = {
-            "validation/schema_version": SCHEMA_VERSION,
-            "validation/report_id": self.report_id,
-            "validation/stage": self.stage,
-            "validation/evidence_level": self.evidence_level,
-            "validation/gate/name": self.gate.name,
-            "validation/gate/outcome": self.gate.outcome,
-            "validation/completeness/status": self.completeness.status,
-            "validation/completeness/accounted_fraction": self.completeness.accounted_fraction,
-            "validation/completeness/missing_cells": self.completeness.missing_cells,
-            "validation/resource_policy": self.resource_policy,
-            "validation/datasets/roles_json": json.dumps(
-                {dataset.dataset_id: dataset.role for dataset in self.datasets}, sort_keys=True
-            ),
-            "validation/datasets/identities_json": json.dumps(
-                {
-                    f"{dataset.dataset_id}/{dataset.split}": {
-                        "kind": dataset.identity_kind,
-                        "sha256": dataset.identity_sha256,
-                        "id_manifest_sha256": dataset.id_manifest_sha256,
-                    }
-                    for dataset in self.datasets
-                },
-                sort_keys=True,
-            ),
-            "validation/claim/supported_json": json.dumps(self.claim_boundary.supported),
-            "validation/claim/prohibited_json": json.dumps(self.claim_boundary.prohibited),
-            "validation/dashboard/panels_json": json.dumps(
-                [declaration.panel_id for declaration in self.visualizations]
-            ),
-        }
-        if self.governance is not None:
-            payload.update(
-                {
-                    "validation/governance/registry_sha256": self.governance.registry_sha256,
-                    "validation/governance/base_ledger_sha256": self.governance.base_ledger_sha256,
-                    "validation/governance/effective_ledger_sha256": self.governance.effective_ledger_sha256,
-                    "validation/governance/status_sha256": self.governance.validation_status_sha256,
-                }
-            )
-            if self.governance.metric_gate_receipt_sha256 is not None:
-                payload["validation/governance/metric_gate_receipt_sha256"] = (
-                    self.governance.metric_gate_receipt_sha256
-                )
-        for condition in self.gate.conditions:
-            payload[f"validation/gate/{condition.domain}/{condition.name}"] = int(condition.passed)
-        for metric in self.metrics:
-            payload[f"validation/{metric.domain}/{metric.name}/{metric.split}"] = float(metric.value)
-        return payload
+        return wandb_summary_from_serializable(self.to_serializable())
+
+
+@dataclass(frozen=True, slots=True)
+class ImmutableDashboardBundle:
+    """Paths and content identity for one no-clobber dashboard generation."""
+
+    directory: Path
+    json_path: Path
+    html_path: Path
+    receipt_path: Path
+    generation_id: str
 
 
 def _escape(value: Any) -> str:
@@ -647,3 +689,65 @@ def verify_validation_dashboard(output: str | Path) -> dict[str, Any]:
     if receipt.get("generation_id") != expected_generation:
         raise ValueError("validation dashboard generation ID does not bind the receipt contents")
     return receipt
+
+
+def verify_immutable_validation_dashboard(output: str | Path) -> dict[str, Any]:
+    """Verify a content-addressed dashboard directory and its canonical bundle."""
+
+    directory = Path(output)
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("immutable validation dashboard must be a real directory")
+    receipt = verify_validation_dashboard(directory)
+    expected_name = f"{IMMUTABLE_DIRECTORY_PREFIX}{receipt['generation_id']}"
+    if directory.name != expected_name:
+        raise ValueError("immutable validation dashboard directory does not match its generation ID")
+    actual_names = {path.name for path in directory.iterdir()}
+    expected_names = {JSON_FILENAME, HTML_FILENAME, RECEIPT_FILENAME}
+    if actual_names != expected_names:
+        raise ValueError("immutable validation dashboard directory contains unbound files")
+    return receipt
+
+
+def write_immutable_validation_dashboard(
+    report: ValidationReport,
+    output_root: str | Path,
+) -> ImmutableDashboardBundle:
+    """Publish one content-addressed dashboard generation without replacing files."""
+
+    root = Path(output_root)
+    root.mkdir(parents=True, exist_ok=True)
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("immutable dashboard output root must be a real directory")
+    temporary = Path(tempfile.mkdtemp(prefix=".validation-dashboard-", dir=root))
+    target: Path | None = None
+    try:
+        write_validation_dashboard(report, temporary)
+        (temporary / ".validation-dashboard.lock").unlink(missing_ok=True)
+        receipt = verify_validation_dashboard(temporary)
+        generation_id = str(receipt["generation_id"])
+        target = root / f"{IMMUTABLE_DIRECTORY_PREFIX}{generation_id}"
+        try:
+            os.rename(temporary, target)
+        except OSError:
+            if not target.exists():
+                raise
+            verify_immutable_validation_dashboard(target)
+        else:
+            root_fd = os.open(root, os.O_RDONLY)
+            try:
+                os.fsync(root_fd)
+            finally:
+                os.close(root_fd)
+        verified = verify_immutable_validation_dashboard(target)
+        if verified["generation_id"] != generation_id:
+            raise RuntimeError("published dashboard generation changed during commit")
+        return ImmutableDashboardBundle(
+            directory=target,
+            json_path=target / JSON_FILENAME,
+            html_path=target / HTML_FILENAME,
+            receipt_path=target / RECEIPT_FILENAME,
+            generation_id=generation_id,
+        )
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)

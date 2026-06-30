@@ -2,7 +2,7 @@
 
 ## Status
 
-**Foundation code implemented; portfolio audit remains in progress.**
+**Foundation code implemented and Phase 2 metadata audit recorded; portfolio expansion remains in progress.**
 
 Wave A started from pushed commit `21af2f3`. This implementation adds the fail-closed machinery required before dataset
 downloads, adapter qualification, or formal GPU experiments. It does not authorize training, open a held-out target, or
@@ -75,7 +75,9 @@ Split-manifest screening and reviewer attestation are defense in depth, not math
 Formal selectors must still run with target paths physically denied, and the manifest binds the resulting path-denial
 receipt. Phase-5/Phase-6 reservations must also pass the selected-unit and independent-cluster disjointness verifier.
 
-## Verification completed
+## Pushed Wave A baseline verification
+
+The following counts describe pushed commit `2d43ff9`, not the current post-Wave-A working tree:
 
 - The integrated Wave A suite passes: 143 tests.
 - The complete repository suite passes: 399 tests in 24:25, with one pre-existing Starlette/httpx deprecation warning.
@@ -101,15 +103,23 @@ receipt. Phase-5/Phase-6 reservations must also pass the selected-unit and indep
 - [ ] Complete source-specific legal approval and record exact terms rather than only the current blocker.
 - [ ] Freeze archive bytes, extracted/cache estimates, retention, and hashes for every planned source.
 - [ ] Create content-addressed split manifests with selected/rejected IDs for the first adapters.
-- [ ] Integrate registry authorization and consumption receipts into every formal runner/Slurm graph.
+- [ ] Integrate registry authorization into every formal runner/Slurm graph. The consumed Phase 2b smoke now has a
+  test-covered authorization/access-decision path; first-open consumption receipts remain required only for unopened
+  targets, and all other formal runners still need migration.
 - [ ] Provision a security-reviewed selector signing authority and trusted externally append-only event store; keep DIODE
   sealed until both are represented by a new hash-bound ledger/registry version.
-- [ ] Connect the validation-dashboard summary payload to online W&B in an official-mini smoke.
+- [ ] Record the first terminal Slurm + online-W&B + strict-postflight receipt for the hash-bound, test-covered Phase 2b
+  official smoke.
+  The aggregate-only publisher and content-addressed dashboard are implemented, but mocked upload tests are not execution
+  evidence.
 - [ ] Add automated credential, restricted-path, raw-target, and unsafe sample-identifier scans to formal
   preflight/postflight; the current clean repository scan is point-in-time evidence only.
 - [ ] Keep raw sample-ID artifact disclosure disabled unless a future design verifies signed, policy-bound authority and
   receives an explicit security review; pseudonymous identifiers remain the default even after such a design exists.
 - [ ] Add S0-S10 experiment-state receipts and generate safe ledger/INDEX/INSIGHTS updates from postflight.
 
-GPU experiments remain blocked until the applicable dataset rows report no readiness blockers and their target paths pass
-the authorization check.
+Within the Phase 2 geometry scope covered here, formal training, SUN development expansion, and DIODE external evaluation
+remain blocked. The only newly implemented GPU path in this change is the exact consumed Phase 2b TUM regression smoke:
+it must run through its clean-commit Slurm wrapper, registry/ledger authorization, verified-archive extraction,
+aggregate-only online W&B publisher, and strict postflight. Any terminal receipt is integration evidence, not
+architecture-quality promotion or fresh transfer evidence.

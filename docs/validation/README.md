@@ -1,7 +1,8 @@
 # JEPA-4D stage validation plans
 
-This directory turns the broad JEPA-4D objective into persistent, stage-specific benchmark and TODO programs. These files
-are plans, not completed evidence and not authorization to submit jobs.
+This directory turns the broad JEPA-4D objective into persistent, stage-specific benchmark and TODO programs. The seven
+phase-plan files are plans, not completed evidence or job authorization. Implementation and readiness records are labeled
+separately and remain subject to their own claim boundaries.
 
 | Stage | Plan | Minimum common evaluation portfolio | Current strongest evidence |
 |---|---|---|---|
@@ -17,6 +18,11 @@ The common state machine, dataset-role policy, logging contract, Slurm constrain
 [the master validation plan](../VALIDATION_PLAN.md). Metric formulas and cross-phase boundaries are in
 [the metric guide](../METRICS.md). The implemented foundation and remaining blockers are tracked in
 [the Wave A implementation record](WAVE_A_FOUNDATION.md). Use [TEMPLATE.md](TEMPLATE.md) when adding a new stage.
+
+The [Phase 2 geometry readiness record](GEOMETRY_READINESS.md) is the current hash-bound metadata/runtime audit for SUN,
+consumed TUM, and sealed DIODE. It permits no access itself. A separate hash-bound, test-covered runner exists only for the
+exact consumed Phase 2b TUM official smoke. Any terminal receipt produced by that runner is limited to consumed historical
+regression/integration evidence and cannot select an architecture or support a fresh transfer claim.
 
 ## Authority order
 
