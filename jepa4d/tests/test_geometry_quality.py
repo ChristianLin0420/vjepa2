@@ -289,6 +289,25 @@ def test_unknown_metric_and_schema_are_rejected() -> None:
         metric_observations(report, "raw_abs_rel")
 
 
+@pytest.mark.parametrize(
+    ("field", "identifier", "message"),
+    [
+        ("unit_id", "../raw-frame", "path-safe pseudonymous"),
+        ("cluster_id", "wandb_v1_" + "A" * 40, "credential-like"),
+    ],
+)
+def test_metric_observations_revalidate_persisted_identifiers(
+    field: str,
+    identifier: str,
+    message: str,
+) -> None:
+    target = torch.ones((1, 1, 1))
+    report = _evaluate(target, target)
+    report["per_unit"][0][field] = identifier
+    with pytest.raises(ValueError, match=message):
+        metric_observations(report, "raw_abs_rel")
+
+
 def test_tied_uncertainty_is_permutation_invariant_and_curve_keeps_full_coverage() -> None:
     target = torch.ones((1, 1, 4))
     first = _evaluate(torch.tensor([[[1.0, 2.0, 3.0, 4.0]]]), target)

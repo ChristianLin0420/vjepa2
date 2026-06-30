@@ -370,9 +370,7 @@ def wandb_summary_from_serializable(report: Mapping[str, Any]) -> dict[str, str 
         ),
         "validation/claim/supported_json": json.dumps(claim_boundary["supported"]),
         "validation/claim/prohibited_json": json.dumps(claim_boundary["prohibited"]),
-        "validation/dashboard/panels_json": json.dumps(
-            [declaration["panel_id"] for declaration in visualizations]
-        ),
+        "validation/dashboard/panels_json": json.dumps([declaration["panel_id"] for declaration in visualizations]),
     }
     if governance is not None:
         payload.update(
@@ -384,9 +382,7 @@ def wandb_summary_from_serializable(report: Mapping[str, Any]) -> dict[str, str 
             }
         )
         if governance.get("metric_gate_receipt_sha256") is not None:
-            payload["validation/governance/metric_gate_receipt_sha256"] = str(
-                governance["metric_gate_receipt_sha256"]
-            )
+            payload["validation/governance/metric_gate_receipt_sha256"] = str(governance["metric_gate_receipt_sha256"])
     for condition in conditions:
         payload[f"validation/gate/{condition['domain']}/{condition['name']}"] = int(condition["passed"])
     for metric in metrics:

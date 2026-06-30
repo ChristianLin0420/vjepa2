@@ -130,6 +130,43 @@ def test_safe_publisher_rejects_offline_before_import_or_file_read(tmp_path, mon
 
 
 @pytest.mark.parametrize(
+    "metadata_field",
+    ("entity", "project", "group", "job_type", "run_name", "artifact_name"),
+)
+def test_safe_publisher_rejects_credential_shaped_metadata_before_wandb_init(
+    tmp_path, monkeypatch, metadata_field: str
+) -> None:
+    initialized = False
+
+    def initialize(**kwargs):
+        nonlocal initialized
+        initialized = True
+        return _Run()
+
+    monkeypatch.setitem(sys.modules, "wandb", SimpleNamespace(init=initialize, Artifact=_Artifact))
+    monkeypatch.setenv("WANDB_MODE", "online")
+    metadata = {
+        "entity": "test-entity",
+        "project": "test-project",
+        "group": "group",
+        "job_type": "official-mini",
+        "run_name": "run",
+        "artifact_name": "artifact",
+    }
+    metadata[metadata_field] = "hf_abcdefghijklmnopqrstuvwxyz123456"
+
+    with pytest.raises(ValueError, match="credential"):
+        publish_safe_online_run(
+            **metadata,
+            config={},
+            summary={},
+            artifact_root=tmp_path,
+            files=(),
+        )
+    assert initialized is False
+
+
+@pytest.mark.parametrize(
     ("name", "payload", "role", "match"),
     [
         ("samples.json", {"sample_id": "rgb-001"}, "aggregate-receipt", "unsafe field"),

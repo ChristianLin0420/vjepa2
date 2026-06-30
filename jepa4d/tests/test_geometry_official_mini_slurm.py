@@ -26,6 +26,7 @@ def _fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
     (repo / ".conda-gpu" / "bin").mkdir(parents=True)
     shutil.copy2(SUBMITTER, repo / "slurm" / SUBMITTER.name)
     shutil.copy2(SBATCH, repo / "slurm" / SBATCH.name)
+    shutil.copy2(ROOT / ".gitignore", repo / ".gitignore")
     (repo / "configs" / "validation" / "dataset_registry.yaml").write_text("schema: fixture\n")
     (repo / "configs" / "validation" / "consumed_test_ledger.yaml").write_text("schema: fixture\n")
     python = repo / ".conda-gpu" / "bin" / "python"
@@ -137,6 +138,8 @@ def test_submitter_has_clean_fresh_unique_and_fail_closed_scheduler_gates() -> N
     assert 'DEFAULT_SUFFIX="${SHORT}-${STAMP}-${NONCE}"' in source
     assert "execution, W&B run, and Slurm job names must be distinct" in source
     assert "JEPA4D_JOB_NAME must begin with j4d-gmini-" in source
+    assert "reject_sensitive_identifier JEPA4D_JOB_NAME" in source
+    assert 'SUBMISSION_LOG_ROOT="$ROOT/outputs/slurm-submit-logs"' in source
     assert source.index("squeue -r -h") < source.index("sbatch --parsable")
     assert source.count("sbatch --parsable") == 1
     for token in ("di" + "ode", "s" + "un"):
@@ -160,7 +163,10 @@ def test_submitter_uses_stubbed_scheduler_and_explicit_export_allowlist(tmp_path
     assert "Governed TUM official-mini job: 12345" in result.stdout
     assert "Active job tasks before submission: 7" in result.stdout
     arguments = Path(environment["FAKE_SBATCH_CAPTURE"]).read_text(encoding="utf-8")
-    assert "--parsable\n--job-name\nj4d-gmini-fixture\n--export\n" in arguments
+    assert "--parsable\n--job-name\nj4d-gmini-fixture\n" in arguments
+    assert f"--output\n{repo}/outputs/slurm-submit-logs/%x-%j.out\n" in arguments
+    assert f"--error\n{repo}/outputs/slurm-submit-logs/%x-%j.err\n" in arguments
+    assert "--export\n" in arguments
     assert "JEPA4D_TUM_ARCHIVE=" in arguments
     assert "JEPA4D_GIT_COMMIT=" in arguments
     assert "JEPA4D_VALIDATION_STATE_ROOT=" in arguments
@@ -168,6 +174,42 @@ def test_submitter_uses_stubbed_scheduler_and_explicit_export_allowlist(tmp_path
     assert "must-not-cross-the-submission-boundary" not in arguments
     assert "ALL," not in arguments
     assert not Path(environment["JEPA4D_STAGE_OUTPUT"]).exists()
+    log_root = repo / "outputs" / "slurm-submit-logs"
+    (log_root / "j4d-gmini-fixture-12345.out").write_text("allocated\n", encoding="utf-8")
+    (log_root / "j4d-gmini-fixture-12345.err").write_text("", encoding="utf-8")
+    assert not subprocess.check_output(
+        ("git", "-C", str(repo), "status", "--porcelain=v1", "--untracked-files=all"), text=True
+    ).strip()
+
+
+@pytest.mark.parametrize(
+    "environment_name",
+    (
+        "JEPA4D_EXECUTION_ID",
+        "JEPA4D_RUN_NAME",
+        "JEPA4D_JOB_NAME",
+        "JEPA4D_WANDB_PROJECT",
+        "JEPA4D_WANDB_ENTITY",
+    ),
+)
+def test_submitter_rejects_credential_shaped_public_identifiers_before_sbatch(
+    tmp_path: Path, environment_name: str
+) -> None:
+    repo, fake_bin = _fixture_repo(tmp_path)
+    environment = _submission_environment(repo, fake_bin, tmp_path)
+    synthetic = "hf_abcdefghijklmnopqrstuvwxyz123456"
+    environment[environment_name] = f"j4d-gmini-{synthetic}" if environment_name == "JEPA4D_JOB_NAME" else synthetic
+    result = subprocess.run(
+        ("bash", str(repo / "slurm" / SUBMITTER.name)),
+        cwd=repo,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "resembles credential material" in result.stderr
+    assert not Path(environment["FAKE_SBATCH_CAPTURE"]).exists()
 
 
 @pytest.mark.parametrize("duplicate", (False, True))

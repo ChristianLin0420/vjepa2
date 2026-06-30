@@ -37,6 +37,7 @@ from jepa4d.validation.geometry_official_mini import (
     PROHIBITED_CLAIMS,
     SPLIT_ID,
     SUPPORTED_CLAIMS,
+    validate_official_mini_quality_metrics,
 )
 from jepa4d.validation.ledger import ConsumedTestLedger
 from jepa4d.validation.registry import DatasetRegistry
@@ -349,6 +350,9 @@ def _validate_geometry_official_mini_locked(
     quality = metric.get("quality_metrics")
     resources = metric.get("resource_metrics")
     gate_conditions = metric.get("gate_conditions")
+    if not isinstance(quality, Mapping):
+        raise ValueError("metric/gate receipt lacks its aggregate quality metrics")
+    validate_official_mini_quality_metrics(quality)
     expected_conditions = {
         "all_aggregate_metrics_finite",
         "complete_registered_test_frames",
@@ -370,7 +374,6 @@ def _validate_geometry_official_mini_locked(
         or metric.get("depth_validity_protocol") != DEPTH_VALIDITY_PROTOCOL
         or metric.get("aggregation_protocol") != AGGREGATION_PROTOCOL
         or metric.get("evaluated_test_frames") != EXPECTED_TEST_FRAMES
-        or not isinstance(quality, Mapping)
         or set(quality) != EXPECTED_QUALITY_METRICS
         or not isinstance(resources, Mapping)
         or set(resources) != EXPECTED_RESOURCE_METRICS

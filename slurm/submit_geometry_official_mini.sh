@@ -8,6 +8,16 @@ die() {
   exit 2
 }
 
+reject_sensitive_identifier() {
+  local name="$1"
+  local value="$2"
+  local normalized="${value,,}"
+  local credential_pattern='wandb_v1_|(^|[._-])hf_[a-z0-9]{16,}|api[._-]?key|access[._-]?token|secret'
+  [[ ! "$normalized" =~ $credential_pattern ]] || {
+    die "$name resembles credential material and may not be published as an identifier"
+  }
+}
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -32,14 +42,23 @@ DEFAULT_SUFFIX="${SHORT}-${STAMP}-${NONCE}"
 EXECUTION_ID="${JEPA4D_EXECUTION_ID:-tum-mini-${DEFAULT_SUFFIX}}"
 RUN_NAME="${JEPA4D_RUN_NAME:-tum-official-mini-${DEFAULT_SUFFIX}}"
 JOB_NAME="${JEPA4D_JOB_NAME:-j4d-gmini-${DEFAULT_SUFFIX}}"
+WANDB_PROJECT="${JEPA4D_WANDB_PROJECT:-jepa4d-worldmodel}"
+WANDB_ENTITY="${JEPA4D_WANDB_ENTITY:-}"
 name_pattern='^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$'
 [[ "$EXECUTION_ID" =~ $name_pattern ]] || die "JEPA4D_EXECUTION_ID must be a path-safe unique name"
 [[ "$RUN_NAME" =~ $name_pattern ]] || die "JEPA4D_RUN_NAME must be a path-safe unique name"
 [[ "$JOB_NAME" =~ $name_pattern ]] || die "JEPA4D_JOB_NAME must be a path-safe unique name"
+[[ "$WANDB_PROJECT" =~ $name_pattern ]] || die "JEPA4D_WANDB_PROJECT must be a path-safe name"
+[[ -z "$WANDB_ENTITY" || "$WANDB_ENTITY" =~ $name_pattern ]] || die "JEPA4D_WANDB_ENTITY must be a path-safe name"
 [[ "$JOB_NAME" == j4d-gmini-* ]] || die "JEPA4D_JOB_NAME must begin with j4d-gmini-"
 [[ "$EXECUTION_ID" != "$RUN_NAME" && "$EXECUTION_ID" != "$JOB_NAME" && "$RUN_NAME" != "$JOB_NAME" ]] || {
   die "execution, W&B run, and Slurm job names must be distinct"
 }
+reject_sensitive_identifier JEPA4D_EXECUTION_ID "$EXECUTION_ID"
+reject_sensitive_identifier JEPA4D_RUN_NAME "$RUN_NAME"
+reject_sensitive_identifier JEPA4D_JOB_NAME "$JOB_NAME"
+reject_sensitive_identifier JEPA4D_WANDB_PROJECT "$WANDB_PROJECT"
+[[ -z "$WANDB_ENTITY" ]] || reject_sensitive_identifier JEPA4D_WANDB_ENTITY "$WANDB_ENTITY"
 
 STAGE_OUTPUT="${JEPA4D_STAGE_OUTPUT:-$ROOT/outputs/geometry-official-mini/$EXECUTION_ID}"
 VALIDATION_STATE_ROOT="${JEPA4D_VALIDATION_STATE_ROOT:-$ROOT/outputs/validation-state}"
@@ -73,8 +92,6 @@ if printf '%s\n' "$queued_names" | awk -v candidate="$JOB_NAME" '$0 == candidate
   die "Slurm job name is already present in the queue: $JOB_NAME"
 fi
 
-WANDB_PROJECT="${JEPA4D_WANDB_PROJECT:-jepa4d-worldmodel}"
-WANDB_ENTITY="${JEPA4D_WANDB_ENTITY:-}"
 JOB_PATH="${PATH:?PATH is required for the allocation environment}"
 for exported_value in \
   "$ROOT" "$ARCHIVE" "$MODEL_ID" "$STAGE_OUTPUT" "$EXECUTION_ID" \
@@ -103,10 +120,14 @@ if [[ -n "$WANDB_ENTITY" ]]; then
   exports+=("JEPA4D_WANDB_ENTITY=$WANDB_ENTITY")
 fi
 export_list="$(IFS=,; printf '%s' "${exports[*]}")"
+SUBMISSION_LOG_ROOT="$ROOT/outputs/slurm-submit-logs"
+mkdir -p "$SUBMISSION_LOG_ROOT"
 
 result="$(
   sbatch --parsable \
     --job-name "$JOB_NAME" \
+    --output "$SUBMISSION_LOG_ROOT/%x-%j.out" \
+    --error "$SUBMISSION_LOG_ROOT/%x-%j.err" \
     --export "$export_list" \
     "$ROOT/slurm/geometry_official_mini.sbatch"
 )"

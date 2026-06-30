@@ -118,7 +118,10 @@ DEPTH_ALIGNMENT_PROTOCOL = "per-frame ratio-of-medians alignment using evaluated
 DEPTH_VALIDITY_PROTOCOL = (
     "finite target depth in (0.1,10.0) metres; every such pixel requires a finite strictly-positive prediction"
 )
-AGGREGATION_PROTOCOL = "mean pixels within frame, then equal mean across exactly eight frames from one recording"
+AGGREGATION_PROTOCOL = (
+    "depth/point metrics preserve each metric's declared per-frame pixel reducer, then use an equal mean across exactly "
+    "eight frames; pose metrics use one sequence-level Sim(3) alignment across those exactly eight frames"
+)
 SUPPORTED_CLAIMS = (
     "Aggregate geometry regression behavior on the registered, consumed TUM Phase 2b split.",
     "End-to-end registry, model, metric, dashboard, and online logging integration.",
@@ -129,6 +132,30 @@ PROHIBITED_CLAIMS = (
 )
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+def validate_official_mini_quality_metrics(values: Mapping[str, Any]) -> None:
+    """Revalidate the complete aggregate quality contract from persisted values."""
+
+    if not values or any(
+        isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(float(value))
+        for value in values.values()
+    ):
+        raise ValueError("quality_metrics must contain finite aggregate values")
+    if set(values) != EXPECTED_QUALITY_METRICS:
+        raise ValueError("quality_metrics must contain the exact official-mini metric schema")
+    if any(float(values[name]) < 0.0 for name in EXPECTED_QUALITY_METRICS):
+        raise ValueError("official-mini error and accuracy metrics cannot be negative")
+    if any(not 0.0 <= float(values[name]) <= 1.0 for name in FRACTION_METRICS):
+        raise ValueError("official-mini fraction metrics must be within [0, 1]")
+    if float(values["pose_alignment_scale"]) <= 0.0:
+        raise ValueError("official-mini pose alignment scale must be positive")
+    if not (float(values["aligned_delta_1"]) <= float(values["aligned_delta_2"]) <= float(values["aligned_delta_3"])):
+        raise ValueError("official-mini aligned delta accuracies must be monotonic")
+    if float(values["point_within_5cm_fraction_aligned"]) > float(values["point_within_10cm_fraction_aligned"]):
+        raise ValueError("5 cm point accuracy cannot exceed 10 cm point accuracy")
+    if float(values["pose_ate_mean_m_sim3"]) > float(values["pose_ate_rmse_m_sim3"]) + 1e-12:
+        raise ValueError("pose ATE mean cannot exceed pose ATE RMSE")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,37 +204,14 @@ class GeometryAggregateResult:
     model_identity_sha256: str
 
     def __post_init__(self) -> None:
-        for name, values in (("quality_metrics", self.quality_metrics), ("resource_metrics", self.resource_metrics)):
-            if not values or any(
-                isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(float(value))
-                for value in values.values()
-            ):
-                raise ValueError(f"{name} must contain finite aggregate values")
-        if set(self.quality_metrics) != EXPECTED_QUALITY_METRICS:
-            raise ValueError("quality_metrics must contain the exact official-mini metric schema")
+        validate_official_mini_quality_metrics(self.quality_metrics)
+        if not self.resource_metrics or any(
+            isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(float(value))
+            for value in self.resource_metrics.values()
+        ):
+            raise ValueError("resource_metrics must contain finite aggregate values")
         if set(self.resource_metrics) != EXPECTED_RESOURCE_METRICS:
             raise ValueError("resource_metrics must contain the exact official-mini resource schema")
-        if any(float(self.quality_metrics[name]) < 0.0 for name in EXPECTED_QUALITY_METRICS):
-            raise ValueError("official-mini error and accuracy metrics cannot be negative")
-        if any(not 0.0 <= float(self.quality_metrics[name]) <= 1.0 for name in FRACTION_METRICS):
-            raise ValueError("official-mini fraction metrics must be within [0, 1]")
-        if float(self.quality_metrics["pose_alignment_scale"]) <= 0.0:
-            raise ValueError("official-mini pose alignment scale must be positive")
-        if not (
-            float(self.quality_metrics["aligned_delta_1"])
-            <= float(self.quality_metrics["aligned_delta_2"])
-            <= float(self.quality_metrics["aligned_delta_3"])
-        ):
-            raise ValueError("official-mini delta accuracies must be monotonic")
-        if float(self.quality_metrics["point_within_5cm_fraction_aligned"]) > float(
-            self.quality_metrics["point_within_10cm_fraction_aligned"]
-        ):
-            raise ValueError("5 cm point accuracy cannot exceed 10 cm point accuracy")
-        if (
-            float(self.quality_metrics["pose_ate_mean_m_sim3"])
-            > float(self.quality_metrics["pose_ate_rmse_m_sim3"]) + 1e-12
-        ):
-            raise ValueError("pose ATE mean cannot exceed pose ATE RMSE")
         if any(float(value) < 0.0 for value in self.resource_metrics.values()):
             raise ValueError("official-mini resource diagnostics cannot be negative")
         if self.evaluated_test_frames != EXPECTED_TEST_FRAMES:

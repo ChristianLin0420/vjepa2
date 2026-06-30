@@ -385,8 +385,11 @@ def publish_safe_online_run(
     ):
         if not _SAFE_NAME.fullmatch(value):
             raise ValueError(f"{name} must be a non-empty path-safe identifier")
+        _validate_text(value, f"metadata.{name}")
     if entity is not None and not _SAFE_NAME.fullmatch(entity):
         raise ValueError("entity must be a path-safe identifier")
+    if entity is not None:
+        _validate_text(entity, "metadata.entity")
     _validate_tree(config, "config")
     published_summary = {**summary, "validation/postflight/status": "pending"}
     _validate_tree(published_summary, "summary")

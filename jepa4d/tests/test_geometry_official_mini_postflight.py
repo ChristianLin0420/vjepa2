@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import slurm.validate_geometry_official_mini as postflight_module
 from jepa4d.tests.test_geometry_official_mini import _fake_publisher, _result, _settings
 from jepa4d.validation._content import (
     sha256_file,
@@ -158,6 +159,35 @@ def test_postflight_rejects_unbound_prediction_or_media_artifact(tmp_path, monke
     with pytest.raises(ValueError, match="artifact allowlist mismatch"):
         _validate(output, wandb_finalizer=unexpected_finalizer)
     assert finalized is False
+    assert not (output / "postflight").exists()
+    assert not (output / "wandb-final").exists()
+    assert not (output / "terminal").exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (lambda values: values.__setitem__("aligned_delta_1", 1.1), "within \\[0, 1\\]"),
+        (
+            lambda values: values.update({"aligned_delta_1": 0.95, "aligned_delta_2": 0.90}),
+            "must be monotonic",
+        ),
+    ],
+)
+def test_postflight_revalidates_forged_quality_semantics(tmp_path, monkeypatch, mutation, match) -> None:
+    output = _build_output(tmp_path, monkeypatch)
+    original = postflight_module._single_content_address
+
+    def forged_single_content_address(directory: Path, prefix: str):
+        path, payload, digest = original(directory, prefix)
+        if prefix == "metric-gate":
+            payload = {**payload, "quality_metrics": dict(payload["quality_metrics"])}
+            mutation(payload["quality_metrics"])
+        return path, payload, digest
+
+    monkeypatch.setattr(postflight_module, "_single_content_address", forged_single_content_address)
+    with pytest.raises(ValueError, match=match):
+        _validate(output)
     assert not (output / "postflight").exists()
     assert not (output / "wandb-final").exists()
     assert not (output / "terminal").exists()

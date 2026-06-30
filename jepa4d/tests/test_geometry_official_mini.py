@@ -16,6 +16,7 @@ from jepa4d.tests.test_validation_wandb import _Artifact, _Run
 from jepa4d.validation._content import sha256_file, sha256_value
 from jepa4d.validation.access import DatasetAccessController
 from jepa4d.validation.geometry_official_mini import (
+    AGGREGATION_PROTOCOL,
     DATASET_ID,
     EXPECTED_QUALITY_METRICS,
     EXPECTED_RESOURCE_METRICS,
@@ -191,6 +192,13 @@ def test_registered_phase2b_manifest_identity_matches_repository_bytes() -> None
     assert split.id_manifest == "jepa4d/config/benchmarks/manifests/tum_rgbd_phase2b_v1.yaml"
     assert split.id_manifest_sha256 == sha256_file(REPO_ROOT / split.id_manifest)
     assert OPERATION in split.allowed_operations
+
+
+def test_aggregation_protocol_declares_mixed_frame_and_sequence_reducers() -> None:
+    assert AGGREGATION_PROTOCOL == (
+        "depth/point metrics preserve each metric's declared per-frame pixel reducer, then use an equal mean across "
+        "exactly eight frames; pose metrics use one sequence-level Sim(3) alignment across those exactly eight frames"
+    )
 
 
 def test_production_entry_requires_slurm_and_canonical_authorities(tmp_path, monkeypatch) -> None:

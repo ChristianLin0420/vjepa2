@@ -368,7 +368,9 @@ def metric_observations(
     rows = report.get("per_unit")
     if not isinstance(rows, list) or not rows:
         raise ValueError("geometry quality report has no per-unit rows")
-    observations: list[ClusteredMetricObservation] = []
+    unit_ids: list[str] = []
+    cluster_ids: list[str] = []
+    metric_values: list[float] = []
     for row in rows:
         if not isinstance(row, Mapping):
             raise TypeError("per-unit geometry rows must be mappings")
@@ -382,12 +384,19 @@ def metric_observations(
             or not isinstance(value, int | float)
         ):
             raise ValueError("per-unit geometry row is missing its metric or manifest identity")
+        unit_ids.append(unit_id)
+        cluster_ids.append(cluster_id)
+        metric_values.append(float(value))
+    units = _validate_identifiers(unit_ids, len(rows), "per-unit unit IDs", unique=True)
+    clusters = _validate_identifiers(cluster_ids, len(rows), "per-unit cluster IDs", unique=False)
+    observations: list[ClusteredMetricObservation] = []
+    for unit_id, cluster_id, value in zip(units, clusters, metric_values, strict=True):
         observations.append(
             ClusteredMetricObservation(
                 pair_id=unit_id,
                 unit_id=unit_id,
                 cluster_id=cluster_id,
-                value=float(value),
+                value=value,
             )
         )
     return tuple(observations)

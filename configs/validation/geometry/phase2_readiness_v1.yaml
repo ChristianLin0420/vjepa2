@@ -27,34 +27,34 @@ bindings:
     terminal_receipt: not-bound
     files:
       - path: jepa4d/validation/geometry_official_mini.py
-        file_sha256: 95f62be6cec2c4832a05c04d19734f1b03e6a92c4f7113203839e9059234e220
+        file_sha256: 8b7bc2f3a506ed902f80b049590794094b291b34bb6054fb4f957db4d368455c
         role: implementation
       - path: jepa4d/validation/wandb.py
-        file_sha256: e7663a53c6cf54ef585306860d39d37d6487eb9062b77be876e7a7701ffa44be
+        file_sha256: c7146faca94c651e6b7d4824ded058c99175350a5d50f05bedd00e2f4fd865c6
         role: implementation
       - path: jepa4d/visualization/validation_dashboard.py
-        file_sha256: a3f736d2d9785fb864ebcb61e4e096fddcfffbee1c7546d46ac704d4f817ac20
+        file_sha256: 08094a809bb94c1f15e5cb9a93b80e241df3975e6332fa7cccf201cfe9d552b2
         role: implementation
       - path: slurm/geometry_official_mini.sbatch
         file_sha256: 6107288ae113653d09d77e3fb2c09649225735a7da4d1c0acae9cd63a108b17f
         role: implementation
       - path: slurm/submit_geometry_official_mini.sh
-        file_sha256: 36ffde554aa89fa92c890c43afcf74e65340606655e016e00e089abc5f6e51de
+        file_sha256: e125a4d74d82c70ba5aec02efa2fc4f0d4bb9bf28094ca006934f9561fcdaa77
         role: implementation
       - path: slurm/validate_geometry_official_mini.py
-        file_sha256: 80c8e591965b3574b77d35c6fdb34673d734c8f71f6153da5979d57cc3fb2c2a
+        file_sha256: aaa531134f134018bb2d62df67f227a09e73977e1b49a2f151fa9a5c9744fc38
         role: implementation
       - path: jepa4d/tests/test_geometry_official_mini.py
-        file_sha256: f59fc4a57c07a96e6ab227d30438e1de8980ca368304ea7e060462522d00893a
+        file_sha256: 3da097b8bc07ad707dd51c74589a5e69fadce798e675c5b6f1df002ce9b3c075
         role: test
       - path: jepa4d/tests/test_geometry_official_mini_postflight.py
-        file_sha256: 70eca6da73ca737b8b8579c01bfd52080cbc9711a1c0b6101caf27927cfb21cc
+        file_sha256: 9a29864bd2c98fc670c0ac1212f8a2887ca967da79dd2ecaedc5f2b208bb6f92
         role: test
       - path: jepa4d/tests/test_geometry_official_mini_slurm.py
-        file_sha256: 77161816504422581298ecf28c7594a3da4ec02775aff9e4abe6d41d9b661490
+        file_sha256: 1db1e6eb8207c46d0f70667085e38b27105e3690b22d37a09f13cf8b34a8faf1
         role: test
       - path: jepa4d/tests/test_validation_wandb.py
-        file_sha256: 68767d05683768281ca9c2a1c0ab29ffbf37299923ab8bad9ede2528410fea30
+        file_sha256: 56e6844dd4f227c1348e6bef144c5969b6c2ccadc4fda655a19f24d068fbaad1
         role: test
       - path: jepa4d/tests/test_validation_dashboard.py
         file_sha256: d343da1c7214c90f84d53e54dd1873df3781b857eb26ddbc63154ae329a331ed
