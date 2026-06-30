@@ -48,7 +48,7 @@ name_pattern='^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$'
 [[ "$WANDB_PROJECT" =~ $name_pattern ]] || die "JEPA4D_WANDB_PROJECT must be a path-safe name"
 [[ -z "$WANDB_ENTITY" || "$WANDB_ENTITY" =~ $name_pattern ]] || die "JEPA4D_WANDB_ENTITY must be a path-safe name"
 [[ "$JOB_NAME" == j4d-p2g-smoke-* ]] || die "JEPA4D_JOB_NAME must begin with j4d-p2g-smoke-"
-[[ "$MAX_STEPS" =~ ^([1-9]|10)$ ]] || die "JEPA4D_MAX_STEPS must be an integer from 1 through 10"
+[[ "$MAX_STEPS" == "3" ]] || die "governed Phase 2g smoke requires exactly three steps per arm"
 [[ "$EXECUTION_ID" != "$RUN_NAME" && "$EXECUTION_ID" != "$JOB_NAME" && "$RUN_NAME" != "$JOB_NAME" ]] || {
   die "execution, W&B run, and Slurm job names must be distinct"
 }

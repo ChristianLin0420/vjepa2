@@ -57,7 +57,7 @@ WANDB_ENTITY="${JEPA4D_WANDB_ENTITY:-}"
 [[ ! -e "$STAGE_OUTPUT" && ! -L "$STAGE_OUTPUT" ]] || {
   jepa4d_die "fresh output path already exists: $STAGE_OUTPUT"
 }
-[[ "$MAX_STEPS" =~ ^([1-9]|10)$ ]] || jepa4d_die "JEPA4D_MAX_STEPS must be an integer from 1 through 10"
+[[ "$MAX_STEPS" == "3" ]] || jepa4d_die "governed Phase 2g smoke requires exactly three steps per arm"
 [[ "${WANDB_MODE:-}" == "online" ]] || jepa4d_die "synthetic training instrumentation requires WANDB_MODE=online"
 [[ "${JEPA4D_GPU_MONITOR_INTERVAL:-}" == "1" ]] || jepa4d_die "GPU telemetry interval must be exactly one second"
 
@@ -70,41 +70,11 @@ command -v scontrol >/dev/null 2>&1 || jepa4d_die "scontrol is required to verif
 if ! allocation="$(scontrol show job -o "$JOB_ID")" || [[ -z "$allocation" ]]; then
   jepa4d_die "unable to resolve the active Slurm allocation"
 fi
-declare -A allocation_fields=()
-IFS=' ' read -r -a allocation_tokens <<<"$allocation"
-for token in "${allocation_tokens[@]}"; do
-  [[ "$token" == *=* ]] || continue
-  allocation_fields["${token%%=*}"]="${token#*=}"
-done
-[[ "${allocation_fields[JobId]:-}" == "$JOB_ID" ]] || jepa4d_die "Slurm job identity mismatch"
-[[ "${allocation_fields[JobName]:-}" == "$JOB_NAME" ]] || jepa4d_die "Slurm job-name identity mismatch"
-[[ "${allocation_fields[Account]:-}" == "edgeai_tao-ptm_image-foundation-model-clip" ]] || {
-  jepa4d_die "Slurm allocation used an unapproved account"
-}
-APPROVED_PARTITIONS=",polar4,polar3,polar,batch_block1,grizzly,batch_block2,batch_block3,"
-[[ "$APPROVED_PARTITIONS" == *",${allocation_fields[Partition]:-},"* ]] || {
-  jepa4d_die "Slurm allocation used an unapproved partition"
-}
-[[ "${allocation_fields[NumNodes]:-}" == "1" && "${allocation_fields[NumTasks]:-}" == "1" ]] || {
-  jepa4d_die "synthetic training smoke requires exactly one node and one task"
-}
-[[ -z "${allocation_fields[ArrayJobId]:-}" && -z "${allocation_fields[ArrayTaskId]:-}" ]] || {
-  jepa4d_die "synthetic training smoke must not run as an array task"
-}
-allocated_tres="${allocation_fields[AllocTRES]:-}"
-[[ ",$allocated_tres," =~ ,gres/gpu(:[^=,]+)?=1, ]] || {
-  jepa4d_die "synthetic training smoke requires exactly one allocated GPU"
-}
-time_limit="${allocation_fields[TimeLimit]:-}"
-if [[ "$time_limit" =~ ^([0-9]+)-([0-9]+):([0-9]{2}):([0-9]{2})$ ]]; then
-  time_seconds=$((10#${BASH_REMATCH[1]} * 86400 + 10#${BASH_REMATCH[2]} * 3600 + 10#${BASH_REMATCH[3]} * 60 + 10#${BASH_REMATCH[4]}))
-elif [[ "$time_limit" =~ ^([0-9]+):([0-9]{2}):([0-9]{2})$ ]]; then
-  time_seconds=$((10#${BASH_REMATCH[1]} * 3600 + 10#${BASH_REMATCH[2]} * 60 + 10#${BASH_REMATCH[3]}))
-else
-  jepa4d_die "Slurm allocation has an unsupported time limit: $time_limit"
-fi
-(( time_seconds <= 30 * 60 )) || jepa4d_die "synthetic training smoke exceeds the 30-minute allocation limit"
 printf '%s\n' "$allocation" >"$JEPA4D_JOB_LOG_DIR/slurm-allocation.txt"
+jepa4d_run_step \
+  "$PYTHON" "$REPO_ROOT/slurm/validate_phase2g_training_smoke.py" \
+  --job-id "$JOB_ID" \
+  --allocation-only
 
 printf '\n[%s] allocated synthetic training-smoke preflight\n' "$(date --iso-8601=seconds)"
 jepa4d_run_step "$PYTHON" - <<'PY'
@@ -152,19 +122,28 @@ cd "$REPO_ROOT"
 printf '\n[%s] synthetic M0-M3 training instrumentation smoke\n' "$(date --iso-8601=seconds)"
 jepa4d_run_step "${command[@]}"
 
-required_artifacts=(
-  "$STAGE_OUTPUT/training_receipt.json"
-  "$STAGE_OUTPUT/steps.jsonl"
-  "$STAGE_OUTPUT/checkpoints/M0.pt"
-  "$STAGE_OUTPUT/checkpoints/M1.pt"
-  "$STAGE_OUTPUT/checkpoints/M2.pt"
-  "$STAGE_OUTPUT/checkpoints/M3.pt"
-  "$STAGE_OUTPUT/wandb_receipt.json"
-  "$STAGE_OUTPUT/SUCCESS"
+printf '\n[%s] governed Phase 2g postflight and terminal W&B publication\n' "$(date --iso-8601=seconds)"
+postflight_command=(
+  "$PYTHON" "$REPO_ROOT/slurm/validate_phase2g_training_smoke.py" \
+  --output "$STAGE_OUTPUT" \
+  --repo-root "$REPO_ROOT" \
+  --job-id "$JOB_ID" \
+  --run-name "$RUN_NAME" \
+  --wandb-project "$WANDB_PROJECT"
 )
-for artifact in "${required_artifacts[@]}"; do
-  [[ -f "$artifact" && ! -L "$artifact" && -s "$artifact" ]] || {
-    jepa4d_die "runner did not produce required nonempty artifact: $artifact"
-  }
-done
+if [[ -n "$WANDB_ENTITY" ]]; then
+  postflight_command+=(--wandb-entity "$WANDB_ENTITY")
+fi
+jepa4d_run_step "${postflight_command[@]}"
+
+[[ -f "$STAGE_OUTPUT/SUCCESS" && ! -L "$STAGE_OUTPUT/SUCCESS" && -s "$STAGE_OUTPUT/SUCCESS" ]] || {
+  jepa4d_die "governed postflight did not produce a terminal-bound SUCCESS marker"
+}
+shopt -s nullglob
+postflight_receipts=("$STAGE_OUTPUT"/postflight/postflight-*.json)
+final_wandb_receipts=("$STAGE_OUTPUT"/wandb-final/wandb-final-*.json)
+terminal_receipts=("$STAGE_OUTPUT"/terminal/terminal-*.json)
+(( ${#postflight_receipts[@]} == 1 && ${#final_wandb_receipts[@]} == 1 && ${#terminal_receipts[@]} == 1 )) || {
+  jepa4d_die "governed postflight did not produce exactly one immutable receipt per terminal stage"
+}
 printf 'pass\n' >"$JEPA4D_JOB_LOG_DIR/SUCCESS"

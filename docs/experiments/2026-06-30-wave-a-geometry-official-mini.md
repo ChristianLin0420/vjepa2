@@ -46,9 +46,10 @@ export JEPA4D_WANDB_PROJECT=jepa4d-worldmodel
 bash slurm/submit_geometry_official_mini.sh
 ```
 
-The governed split is `tum-rgbd.phase2b-freiburg1-xyz-test`, with registered frame indices
-`660, 677, 694, 711, 728, 745, 762, 779`. The official VGGT-1B local checkpoint ran in CUDA FP32. Authentication came from
-the submitter-owned protected home credential and was absent from the job export and artifacts.
+The governed split is `tum-rgbd.phase2b-freiburg1-xyz-test`; its exact eight-member identity is retained in the
+hash-bound registry and is intentionally not duplicated in this aggregate report. The official VGGT-1B local checkpoint
+ran in CUDA FP32. Authentication came from the submitter-owned protected home credential and was absent from the job
+export and artifacts.
 
 ## W&B dashboard reading guide
 

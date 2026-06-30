@@ -105,10 +105,15 @@ real image, dataset, feature cache, depth target, pretrained model or input chec
 selection, or architecture comparison. It cannot support accuracy, convergence, calibration, transfer, latency,
 efficiency, architecture-quality, promotion, or deployment claims, and it does not authorize any Phase 2g-A job.
 
-The current Slurm wrapper does not independently revalidate the runner receipt in a strict terminal postflight, and the
-W&B artifact was uploaded before the final local training receipt existed, so it does not bind that receipt. Those are
-formal evidence-pipeline blockers, not failures of this bounded synthetic contract smoke. Formal SUN training remains
-policy-blocked and DIODE remains sealed.
+The v1 Slurm wrapper executed by this job did not independently revalidate the runner receipt in a strict terminal
+postflight, and the W&B artifact was uploaded before the final local training receipt existed, so it does not bind that
+receipt. Those are formal evidence-pipeline blockers, not failures of this bounded synthetic contract smoke. Formal SUN
+training remains policy-blocked and DIODE remains sealed.
+
+Follow-up v2 code hardening performed after this immutable v1 run adds a strict content-addressed postflight, exact
+metric/config/checkpoint validation, and terminal W&B publication. That later implementation does not retroactively
+upgrade this job or its artifact; a future separately authorized v2 smoke would be required to exercise the stronger
+terminal contract.
 
 ## Next experiments
 

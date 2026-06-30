@@ -213,18 +213,22 @@ record.
 ## Synthetic Phase 2g training-instrumentation smoke
 
 This is an implementation-only, synthetic CUDA smoke for the M0-M3 training
-and W&B instrumentation path. It consumes no dataset, model, checkpoint, or
-archive input and is not roadmap first-round training, held-out evidence, or a
+and W&B instrumentation path. It consumes no dataset, model, input checkpoint,
+or archive and is not roadmap first-round training, held-out evidence, or a
 promotion result. The current roadmap does not authorize submitting it as a
 Phase 2g experiment; the wrapper is provided for a separately authorized
 engineering check after its complete implementation is committed.
 
 The wrapper is the only supported Slurm entrypoint. It requires a clean
-committed tree, a fresh output, one node/task/GPU for no more than 30 minutes,
-and fewer than eight expanded active tasks before submission. It runs all four
-instrumentation modes in one W&B run with one to ten optimizer steps per mode
-(three by default). Scheduler stdout/stderr and the structured job directory
-are printed as machine-readable `key=value` lines.
+committed tree, a fresh output, exactly one node/task/GPU, eight CPUs, 32 GiB,
+and no more than 30 minutes. It refuses submission when eight expanded active
+tasks already exist and shares the cross-wrapper home-directory submission
+lock with the governed TUM smoke. It runs all four
+instrumentation modes in one W&B run. The reusable Python boundary remains
+bounded to one through ten optimizer steps per mode for tests, while the
+governed submitter freezes exactly three steps per mode. Scheduler
+stdout/stderr and the structured job directory are printed as machine-readable
+`key=value` lines.
 
 W&B authentication must already exist at `$HOME/.netrc`, owned by the user and
 set to mode 0600. The credential is read by W&B from `HOME`; the wrapper never
@@ -239,9 +243,15 @@ export JEPA4D_MAX_STEPS=3
 bash slurm/submit_phase2g_training_smoke.sh
 ```
 
-Success requires `training_receipt.json`, `steps.jsonl`, all four M0-M3
-checkpoints, `wandb_receipt.json`, and `SUCCESS` in the fresh output, plus a
-separate `SUCCESS` marker in the structured Slurm log directory. GPU telemetry
-is sampled every second. These artifacts prove only that the synthetic
-instrumentation path executed; they do not authorize or stand in for any
-real-data training.
+The runner first writes a pending-postflight v2 receipt. Success then requires
+strict semantic revalidation of exactly 12 optimizer rows, all four M0-M3
+checkpoints, the frozen optimizer/configuration, gradient firewall, complete
+metric sets, scheduler/Git/code identities, and the preliminary online W&B
+upload. The validator resumes that exact W&B run and uploads a self-contained
+terminal artifact with the training, preliminary-W&B, and postflight receipts,
+the step log, and all four validated checkpoints. Only then does it write
+exactly one final W&B receipt, terminal receipt, and terminal-bound `SUCCESS`
+marker. A separate `SUCCESS` marker is written in the structured Slurm log
+directory last. GPU telemetry is sampled every second. These artifacts prove
+only that the synthetic instrumentation path executed; they do not authorize
+or stand in for any real-data training.

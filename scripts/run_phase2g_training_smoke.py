@@ -20,14 +20,17 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import torch
 
 from jepa4d.models.phase2f_scale_geometry import DEFAULT_PHASE2F_ARMS, Phase2fScaleGeometryProbe
+from jepa4d.training.phase2f_losses import Phase2fLossConfig
 from jepa4d.training.phase2f_training import (
     assert_strict_phase2f_reload,
     load_phase2f_checkpoint,
@@ -37,9 +40,11 @@ from jepa4d.training.phase2f_training import (
 )
 
 ARMS = DEFAULT_PHASE2F_ARMS
-SMOKE_SCHEMA = "jepa4d-phase2g-training-instrumentation-smoke-v1"
-STEP_SCHEMA = "jepa4d-phase2g-training-instrumentation-step-v1"
-WANDB_RECEIPT_SCHEMA = "jepa4d-phase2g-training-instrumentation-wandb-v1"
+SMOKE_SCHEMA = "jepa4d-phase2g-training-instrumentation-smoke-v2"
+STEP_SCHEMA = "jepa4d-phase2g-training-instrumentation-step-v2"
+WANDB_RECEIPT_SCHEMA = "jepa4d-phase2g-training-instrumentation-wandb-v2"
+WANDB_JOB_TYPE = "phase2g-instrumentation-smoke"
+CLIP_GRAD_NORM_EPSILON = 1e-6
 CLAIM_BOUNDARY = (
     "Synthetic integration smoke only: no dataset, cache, held-out target, or scientific-quality evidence was used or "
     "produced. Metrics validate training and logging instrumentation, not model quality or Phase 2g promotion."
@@ -47,6 +52,37 @@ CLAIM_BOUNDARY = (
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _CREDENTIAL_SHAPE = re.compile(r"wandb_v1_[A-Za-z0-9_-]+|(?:^|[._-])hf_[A-Za-z0-9]{16,}", re.IGNORECASE)
+_OBJECTIVE_METRICS = frozenset(
+    {
+        "total",
+        "shape_objective",
+        "scale_objective",
+        "field_objective",
+        "monolithic_nll",
+        "monolithic_scale_invariant",
+        "monolithic_gradient",
+        "monolithic_distillation",
+        "shape_nll",
+        "shape_l1",
+        "shape_gradient",
+        "scale_nll",
+        "scale_l1",
+        "paired_scale_consistency",
+        "scale_field_objective",
+        "scale_field_fit",
+        "scale_field_tv",
+    }
+)
+_DIAGNOSTIC_METRICS = frozenset(
+    {
+        "joint_nll_diagnostic_only",
+        "optimal_log_scale_mean",
+        "scale_field_zero_mean_error",
+        "scale_field_max_abs",
+    }
+)
+_ADAMW_BETAS = (0.9, 0.999)
+_ADAMW_EPS = 1e-8
 _NVIDIA_SMI_FIELDS = (
     "gpu_utilization_percent",
     "gpu_memory_used_mib",
@@ -93,6 +129,10 @@ class SmokeSettings:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
+        if self.input_dim < 2:
+            raise ValueError("input_dim must be at least 2 for the synthetic target construction")
+        if self.spatial_size < 2:
+            raise ValueError("spatial_size must be at least 2 for the spatial-gradient losses")
         for name in ("learning_rate", "gradient_clip"):
             value = getattr(self, name)
             if not math.isfinite(value) or value <= 0:
@@ -127,17 +167,54 @@ def _canonical_sha256(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _sha256(path: Path) -> str:
+def _json_safe_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
+    decoded = json.loads(json.dumps(value, sort_keys=True, allow_nan=False))
+    if not isinstance(decoded, dict):
+        raise TypeError("expected a JSON object")
+    return decoded
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _file_identity_and_state(
+    path: Path,
+    *,
+    published_name: str | None = None,
+) -> tuple[dict[str, Any], tuple[int, int, int, int, int]]:
+    resolved = path.resolve(strict=True)
+    if path.is_symlink() or not resolved.is_file():
+        raise ValueError(f"smoke artifact must be a regular non-symlink file: {path.name}")
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    with resolved.open("rb") as stream:
+        before = os.fstat(stream.fileno())
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
+        after = os.fstat(stream.fileno())
+    final = resolved.stat()
+    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    if any(getattr(before, field) != getattr(after, field) for field in fields) or any(
+        getattr(after, field) != getattr(final, field) for field in fields
+    ):
+        raise RuntimeError(f"smoke artifact changed while hashing: {path.name}")
+    name = resolved.name if published_name is None else published_name
+    if not name or name.startswith("/") or any(part in {"", ".", ".."} for part in name.split("/")):
+        raise ValueError(f"unsafe published smoke artifact name: {name!r}")
+    identity = {"name": name, "bytes": after.st_size, "sha256": digest.hexdigest()}
+    state = (
+        int(after.st_dev),
+        int(after.st_ino),
+        int(after.st_size),
+        int(after.st_mtime_ns),
+        int(after.st_ctime_ns),
+    )
+    return identity, state
 
 
-def _file_identity(path: Path) -> dict[str, Any]:
-    resolved = path.resolve(strict=True)
-    return {"name": resolved.name, "bytes": resolved.stat().st_size, "sha256": _sha256(resolved)}
+def _file_identity(path: Path, *, published_name: str | None = None) -> dict[str, Any]:
+    identity, _ = _file_identity_and_state(path, published_name=published_name)
+    return identity
 
 
 def _runtime_identity(settings: SmokeSettings, device: torch.device) -> dict[str, Any]:
@@ -147,10 +224,11 @@ def _runtime_identity(settings: SmokeSettings, device: torch.device) -> dict[str
     if device.type == "cuda":
         index = 0 if device.index is None else device.index
         properties = torch.cuda.get_device_properties(index)
+        raw_uuid = getattr(properties, "uuid", None)
         hardware.update(
             {
                 "device_name": properties.name,
-                "device_uuid": str(getattr(properties, "uuid", "unavailable")),
+                "device_uuid_sha256": None if raw_uuid is None else _sha256_text(str(raw_uuid)),
                 "compute_capability": f"{properties.major}.{properties.minor}",
                 "total_memory_bytes": int(properties.total_memory),
             }
@@ -168,6 +246,35 @@ def _runtime_identity(settings: SmokeSettings, device: torch.device) -> dict[str
             "model_module": _file_identity(model_module),
             "training_module": _file_identity(training_module),
         },
+    }
+
+
+def _determinism_settings(device: torch.device) -> dict[str, Any]:
+    return {
+        "synthetic_cpu_generator_seeded_per_arm_step": True,
+        "torch_manual_seeded_per_arm": True,
+        "cuda_manual_seeded_per_arm": device.type == "cuda",
+        "deterministic_algorithms_enabled": torch.are_deterministic_algorithms_enabled(),
+        "deterministic_algorithms_warn_only": torch.is_deterministic_algorithms_warn_only_enabled(),
+        "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+        "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+        "bitwise_reproducibility_claimed": False,
+    }
+
+
+def _optimizer_settings(settings: SmokeSettings) -> dict[str, Any]:
+    return {
+        "name": "torch.optim.AdamW",
+        "learning_rate": settings.learning_rate,
+        "weight_decay": settings.weight_decay,
+        "betas": list(_ADAMW_BETAS),
+        "eps": _ADAMW_EPS,
+        "amsgrad": False,
+        "maximize": False,
+        "foreach": False,
+        "capturable": False,
+        "differentiable": False,
+        "fused": False,
     }
 
 
@@ -261,6 +368,37 @@ def _parameter_update_norm(model: torch.nn.Module, before: Mapping[str, torch.Te
     return float(squared.sqrt())
 
 
+def _parameter_gradient_norm(model: torch.nn.Module) -> float:
+    squared = torch.zeros((), dtype=torch.float64)
+    for parameter in model.parameters():
+        if parameter.grad is not None:
+            squared += parameter.grad.detach().cpu().double().square().sum()
+    value = float(squared.sqrt())
+    if not math.isfinite(value):
+        raise RuntimeError("training smoke produced a non-finite post-clip gradient norm")
+    return value
+
+
+def _split_step_metrics(metrics: Mapping[str, float]) -> tuple[dict[str, float], dict[str, float]]:
+    scalar_metrics = {name: float(value) for name, value in metrics.items() if not name.startswith("gradient_")}
+    unknown = set(scalar_metrics) - _OBJECTIVE_METRICS - _DIAGNOSTIC_METRICS
+    if unknown:
+        raise RuntimeError(f"unclassified Phase 2g smoke metrics: {sorted(unknown)}")
+    objectives = {name: value for name, value in scalar_metrics.items() if name in _OBJECTIVE_METRICS}
+    diagnostics = {name: value for name, value in scalar_metrics.items() if name in _DIAGNOSTIC_METRICS}
+    if "total" not in objectives:
+        raise RuntimeError("Phase 2g smoke step lacks its total optimized objective")
+    field_name = "field_objective" if "field_objective" in objectives else "scale_field_objective"
+    expected_total = (
+        objectives.get("shape_objective", 0.0)
+        + objectives.get("scale_objective", 0.0)
+        + objectives.get(field_name, 0.0)
+    )
+    if not math.isclose(objectives["total"], expected_total, rel_tol=1e-5, abs_tol=1e-6):
+        raise RuntimeError("Phase 2g optimized objective does not match its shape/scale/field decomposition")
+    return objectives, diagnostics
+
+
 def _memory_metrics(device: torch.device) -> dict[str, float]:
     if device.type != "cuda":
         return {
@@ -294,18 +432,23 @@ def nvidia_smi_telemetry(device: torch.device) -> dict[str, float]:
             raise RuntimeError("unable to map the logical CUDA device to an allocated nvidia-smi identity")
         selector = visible[index]
     query = "utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.sm,clocks.mem"
-    completed = subprocess.run(
-        [
-            "nvidia-smi",
-            f"--id={selector}",
-            f"--query-gpu={query}",
-            "--format=csv,noheader,nounits",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                f"--id={selector}",
+                f"--query-gpu={query}",
+                "--format=csv,noheader,nounits",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError("nvidia-smi telemetry query failed for the allocated CUDA device") from None
+    if completed.returncode != 0:
+        raise RuntimeError("nvidia-smi telemetry query failed for the allocated CUDA device")
     rows = [row.strip() for row in completed.stdout.splitlines() if row.strip()]
     if len(rows) != 1:
         raise RuntimeError(f"nvidia-smi returned {len(rows)} telemetry rows for the allocated CUDA device")
@@ -329,40 +472,119 @@ def _wandb_payload(row: Mapping[str, Any]) -> dict[str, float | int | str]:
         "arm": arm,
         f"{prefix}/optimizer/learning_rate": float(row["optimizer"]["learning_rate"]),
         f"{prefix}/optimizer/gradient_clip_threshold": float(row["optimizer"]["gradient_clip_threshold"]),
-        f"{prefix}/optimizer/unclipped_gradient_norm": float(row["optimizer"]["unclipped_gradient_norm"]),
-        f"{prefix}/optimizer/clipped_gradient_norm": float(row["optimizer"]["clipped_gradient_norm"]),
-        f"{prefix}/optimizer/clip_coefficient": float(row["optimizer"]["clip_coefficient"]),
+        f"{prefix}/optimizer/pre_clip_gradient_norm": float(row["optimizer"]["pre_clip_gradient_norm"]),
+        f"{prefix}/optimizer/post_clip_gradient_norm": float(row["optimizer"]["post_clip_gradient_norm"]),
+        f"{prefix}/optimizer/applied_clip_coefficient": float(row["optimizer"]["applied_clip_coefficient"]),
         f"{prefix}/optimizer/was_clipped": int(row["optimizer"]["was_clipped"]),
         f"{prefix}/optimizer/parameter_update_norm": float(row["optimizer"]["parameter_update_norm"]),
-        f"{prefix}/timing/step_seconds": float(row["timing"]["step_seconds"]),
-        f"{prefix}/throughput/samples_per_second": float(row["timing"]["samples_per_second"]),
-        f"{prefix}/throughput/source_groups_per_second": float(row["timing"]["source_groups_per_second"]),
+        f"{prefix}/resource_diagnostic/timing/step_seconds": float(row["resources"]["timing"]["step_seconds"]),
+        f"{prefix}/resource_diagnostic/throughput/samples_per_second": float(
+            row["resources"]["timing"]["samples_per_second"]
+        ),
+        f"{prefix}/resource_diagnostic/throughput/source_groups_per_second": float(
+            row["resources"]["timing"]["source_groups_per_second"]
+        ),
     }
-    payload.update({f"{prefix}/loss/{name}": float(value) for name, value in row["loss"].items()})
+    payload.update({f"{prefix}/objective/{name}": float(value) for name, value in row["objectives"].items()})
+    payload.update({f"{prefix}/diagnostic/{name}": float(value) for name, value in row["diagnostics"].items()})
     payload.update({f"{prefix}/gradients/{name}": float(value) for name, value in row["gradients"].items()})
-    payload.update({f"{prefix}/memory/{name}": float(value) for name, value in row["memory"].items()})
-    payload.update({f"{prefix}/nvidia_smi/{name}": float(value) for name, value in row["nvidia_smi"].items()})
+    payload.update(
+        {
+            f"{prefix}/resource_diagnostic/memory/{name}": float(value)
+            for name, value in row["resources"]["memory"].items()
+        }
+    )
+    payload.update(
+        {
+            f"{prefix}/resource_diagnostic/nvidia_smi/{name}": float(value)
+            for name, value in row["resources"]["nvidia_smi"].items()
+        }
+    )
+    payload.update(
+        {
+            f"{prefix}/architecture/parameter_count/{name}": int(value)
+            for name, value in row["parameter_counts"].items()
+        }
+    )
     return payload
 
 
-def _wandb_identity(run: Any, artifact: Any, *, artifact_name: str) -> dict[str, Any]:
+def _required_backend_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value.casefold() in {"none", "null"}:
+        raise RuntimeError(f"W&B did not return a valid {label}")
+    _require_safe_finite_tree(value, f"wandb_backend.{label}")
+    return value
+
+
+def _backend_artifact_name_matches(name: str, *, collection: str, version: str) -> bool:
+    return name in {collection, f"{collection}:{version}"}
+
+
+def _validated_run_identity(run: Any, settings: SmokeSettings) -> dict[str, str]:
+    identity = {
+        "entity": _required_backend_string(getattr(run, "entity", None), "entity"),
+        "project": _required_backend_string(getattr(run, "project", None), "project"),
+        "group": _required_backend_string(getattr(run, "group", None), "group"),
+        "run_name": _required_backend_string(getattr(run, "name", None), "run_name"),
+        "job_type": _required_backend_string(getattr(run, "job_type", None), "job_type"),
+        "run_id": _required_backend_string(getattr(run, "id", None), "run_id"),
+        "run_url": _required_backend_string(getattr(run, "url", None), "run_url"),
+    }
+    if settings.wandb_entity is not None and identity["entity"] != settings.wandb_entity:
+        raise RuntimeError("W&B backend entity differs from the requested entity")
+    if (identity["project"], identity["group"], identity["run_name"], identity["job_type"]) != (
+        settings.wandb_project,
+        settings.wandb_group,
+        settings.wandb_run_name,
+        WANDB_JOB_TYPE,
+    ):
+        raise RuntimeError("W&B backend project/group/run name/job type differs from the requested identity")
+    parsed_url = urlsplit(identity["run_url"])
+    if parsed_url.scheme not in {"https", "http"} or not parsed_url.netloc:
+        raise RuntimeError("W&B backend returned an invalid online run URL")
+    path_parts = [part for part in parsed_url.path.split("/") if part]
+    expected_suffix = [identity["entity"], identity["project"], "runs", identity["run_id"]]
+    if path_parts[-4:] != expected_suffix:
+        raise RuntimeError("W&B backend run URL does not bind the returned run identity")
+    return identity
+
+
+def _wandb_identity(
+    run: Any,
+    artifact: Any,
+    *,
+    artifact_name: str,
+    settings: SmokeSettings,
+    files: Sequence[Mapping[str, Any]],
+    config_sha256: str,
+) -> dict[str, Any]:
+    run_identity = _validated_run_identity(run, settings)
+    artifact_version = _required_backend_string(getattr(artifact, "version", None), "artifact_version")
+    backend_artifact_name = _required_backend_string(getattr(artifact, "name", None), "artifact_name")
+    if not _backend_artifact_name_matches(
+        backend_artifact_name,
+        collection=artifact_name,
+        version=artifact_version,
+    ):
+        raise RuntimeError("W&B backend artifact name differs from the requested artifact identity")
+    artifact_id = _required_backend_string(getattr(artifact, "id", None), "artifact_id")
+    artifact_digest = _required_backend_string(getattr(artifact, "digest", None), "artifact_digest")
+    file_values = [dict(value) for value in files]
+    files_sha256 = _canonical_sha256({"files": file_values})
     values = {
         "schema_version": WANDB_RECEIPT_SCHEMA,
         "mode": "online",
-        "entity": str(run.entity),
-        "project": str(run.project),
-        "group": str(run.group),
-        "run_name": str(run.name),
-        "run_id": str(run.id),
-        "run_url": str(run.url),
+        "status": "uploaded-preliminary",
+        "terminal_status": "pending-postflight",
+        **run_identity,
         "artifact_name": artifact_name,
-        "artifact_id": str(artifact.id),
-        "artifact_version": str(artifact.version),
-        "artifact_digest": str(artifact.digest),
-        "status": "success",
+        "artifact_id": artifact_id,
+        "artifact_version": artifact_version,
+        "artifact_digest": artifact_digest,
+        "config_sha256": config_sha256,
+        "files_sha256": files_sha256,
+        "files": file_values,
     }
-    if any(not values[name] for name in values if name not in {"entity"}):
-        raise RuntimeError("W&B did not return complete online run/artifact identities")
     _require_safe_finite_tree(values, "wandb_receipt")
     return values
 
@@ -385,6 +607,9 @@ def run_training_smoke(
     steps_path = output / "steps.jsonl"
     steps_path.touch()
     runtime_identity = _runtime_identity(settings, device)
+    configs = phase2f_arm_configs(settings.input_dim)
+    loss_config = Phase2fLossConfig()
+    optimizer_settings = _optimizer_settings(settings)
 
     config = {
         "schema_version": SMOKE_SCHEMA,
@@ -399,13 +624,25 @@ def run_training_smoke(
         "spatial_size": settings.spatial_size,
         "source_groups": settings.source_groups,
         "views_per_group": 2,
-        "learning_rate": settings.learning_rate,
-        "weight_decay": settings.weight_decay,
         "gradient_clip": settings.gradient_clip,
+        "arm_configs": {arm: asdict(configs[arm]) for arm in ARMS},
+        "loss_config": asdict(loss_config),
+        "nll_convention": "Gaussian NLL omits its additive constant; optimized NLL terms may be negative",
+        "optimizer": optimizer_settings,
+        "determinism": _determinism_settings(device),
+        "resource_policy": "diagnostic-only",
+        "requested_wandb_identity": {
+            "entity": settings.wandb_entity,
+            "project": settings.wandb_project,
+            "group": settings.wandb_group,
+            "run_name": settings.wandb_run_name,
+            "job_type": WANDB_JOB_TYPE,
+        },
         "synthetic_inputs_only": True,
         "dataset_or_cache_access": False,
         "runtime_identity": runtime_identity,
     }
+    config = _json_safe_mapping(config)
     _require_safe_finite_tree(config, "config")
     run = None
     finished = False
@@ -415,7 +652,7 @@ def run_training_smoke(
             entity=settings.wandb_entity,
             group=settings.wandb_group,
             name=settings.wandb_run_name,
-            job_type="phase2g-instrumentation-smoke",
+            job_type=WANDB_JOB_TYPE,
             mode="online",
             reinit="finish_previous",
             config=config,
@@ -423,11 +660,11 @@ def run_training_smoke(
         )
         if run is None or bool(run.offline):
             raise RuntimeError("the instrumentation smoke requires an online W&B run")
+        initial_run_identity = _validated_run_identity(run, settings)
         if hasattr(run, "define_metric"):
             run.define_metric("global_step")
             run.define_metric("arms/*", step_metric="global_step")
 
-        configs = phase2f_arm_configs(settings.input_dim)
         checkpoint_identities: dict[str, dict[str, Any]] = {}
         arm_summaries: dict[str, dict[str, Any]] = {}
         global_step = 0
@@ -442,6 +679,14 @@ def run_training_smoke(
                 model.parameters(),
                 lr=settings.learning_rate,
                 weight_decay=settings.weight_decay,
+                betas=_ADAMW_BETAS,
+                eps=_ADAMW_EPS,
+                amsgrad=False,
+                maximize=False,
+                foreach=False,
+                capturable=False,
+                differentiable=False,
+                fused=False,
             )
             final_features: torch.Tensor | None = None
             final_intrinsics: torch.Tensor | None = None
@@ -468,6 +713,7 @@ def run_training_smoke(
                     intrinsics=intrinsics,
                     intrinsics_image_size=(384, 384) if intrinsics is not None else None,
                     valid_mask=valid,
+                    loss_config=loss_config,
                     group_count=settings.source_groups,
                     views=2,
                     maximum_gradient_norm=settings.gradient_clip,
@@ -483,16 +729,26 @@ def run_training_smoke(
                     result.firewall.maximum_forbidden_norm,
                 )
                 update_norm = _parameter_update_norm(model, before)
-                loss = {
-                    name: float(value) for name, value in result.metrics.items() if not name.startswith("gradient_")
-                }
+                objectives, diagnostics = _split_step_metrics(result.metrics)
                 gradients = {
                     name.removeprefix("gradient_"): float(value)
                     for name, value in result.metrics.items()
                     if name.startswith("gradient_")
                 }
-                unclipped = float(result.metrics["gradient_norm_total_before_clip"])
-                clip_coefficient = min(1.0, settings.gradient_clip / max(unclipped, 1e-12))
+                pre_clip_norm = float(result.metrics["gradient_norm_total_before_clip"])
+                post_clip_norm = _parameter_gradient_norm(model)
+                if pre_clip_norm < 0 or not math.isfinite(pre_clip_norm):
+                    raise RuntimeError("training smoke produced an invalid pre-clip gradient norm")
+                if post_clip_norm > settings.gradient_clip + max(1e-6, settings.gradient_clip * 1e-5):
+                    raise RuntimeError("training smoke post-clip gradient norm exceeds its configured threshold")
+                applied_clip_coefficient = min(
+                    1.0,
+                    settings.gradient_clip / (pre_clip_norm + CLIP_GRAD_NORM_EPSILON),
+                )
+                expected_post_clip_norm = pre_clip_norm * applied_clip_coefficient
+                if not math.isclose(post_clip_norm, expected_post_clip_norm, rel_tol=2e-5, abs_tol=1e-7):
+                    raise RuntimeError("training smoke gradients violate torch clip_grad_norm_ semantics")
+                was_clipped = int(applied_clip_coefficient < 1.0)
                 memory = _memory_metrics(device)
                 telemetry = telemetry_reader(device)
                 if device.type == "cuda" and set(telemetry) != set(_NVIDIA_SMI_FIELDS):
@@ -502,24 +758,28 @@ def run_training_smoke(
                     "arm": arm,
                     "arm_step": arm_step,
                     "global_step": global_step,
-                    "loss": loss,
+                    "objectives": objectives,
+                    "diagnostics": diagnostics,
                     "gradients": gradients,
                     "optimizer": {
                         "learning_rate": float(optimizer.param_groups[0]["lr"]),
                         "gradient_clip_threshold": settings.gradient_clip,
-                        "unclipped_gradient_norm": unclipped,
-                        "clipped_gradient_norm": min(unclipped, settings.gradient_clip),
-                        "clip_coefficient": clip_coefficient,
-                        "was_clipped": int(unclipped > settings.gradient_clip),
+                        "pre_clip_gradient_norm": pre_clip_norm,
+                        "post_clip_gradient_norm": post_clip_norm,
+                        "applied_clip_coefficient": applied_clip_coefficient,
+                        "was_clipped": was_clipped,
                         "parameter_update_norm": update_norm,
                     },
-                    "timing": {
-                        "step_seconds": step_seconds,
-                        "samples_per_second": len(features) / step_seconds,
-                        "source_groups_per_second": settings.source_groups / step_seconds,
+                    "resources": {
+                        "policy": "diagnostic-only",
+                        "timing": {
+                            "step_seconds": step_seconds,
+                            "samples_per_second": len(features) / step_seconds,
+                            "source_groups_per_second": settings.source_groups / step_seconds,
+                        },
+                        "memory": memory,
+                        "nvidia_smi": telemetry,
                     },
-                    "memory": memory,
-                    "nvidia_smi": telemetry,
                     "parameter_counts": result.parameter_counts,
                     "gradient_firewall_passed": True,
                 }
@@ -549,14 +809,24 @@ def run_training_smoke(
             }
             arm_summaries[arm] = {
                 "optimizer_steps": settings.max_steps,
-                "final_total_loss": float(final_row["loss"]["total"]),
+                "final_total_objective": float(final_row["objectives"]["total"]),
                 "final_parameter_update_norm": float(final_row["optimizer"]["parameter_update_norm"]),
                 "maximum_forbidden_gradient_norm": maximum_forbidden_gradient_norm,
                 "exact_reload": True,
             }
 
         steps_identity = _file_identity(steps_path)
-        artifact_name = f"phase2g-instrumentation-smoke-{settings.execution_id}-{run.id}"
+        upload_paths = (
+            ("steps.jsonl", steps_path),
+            *((f"checkpoints/{arm}.pt", checkpoint_dir / f"{arm}.pt") for arm in ARMS),
+        )
+        uploaded_file_snapshots = [
+            _file_identity_and_state(path, published_name=published_name) for published_name, path in upload_paths
+        ]
+        uploaded_file_identities = [identity for identity, _ in uploaded_file_snapshots]
+        uploaded_files_sha256 = _canonical_sha256({"files": uploaded_file_identities})
+        config_sha256 = _canonical_sha256(config)
+        artifact_name = f"phase2g-instrumentation-smoke-{settings.execution_id}-{initial_run_identity['run_id']}"
         artifact = wandb_module.Artifact(
             artifact_name,
             type="training-instrumentation-smoke",
@@ -564,28 +834,43 @@ def run_training_smoke(
                 "schema_version": SMOKE_SCHEMA,
                 "evidence_level": "integration-smoke",
                 "synthetic_inputs_only": True,
-                "config_sha256": _canonical_sha256(config),
+                "terminal_status": "pending-postflight",
+                "config_sha256": config_sha256,
+                "files_sha256": uploaded_files_sha256,
             },
         )
-        artifact.add_file(str(steps_path), name="steps.jsonl")
-        for arm in ARMS:
-            artifact.add_file(str(checkpoint_dir / f"{arm}.pt"), name=f"checkpoints/{arm}.pt")
+        for published_name, path in upload_paths:
+            artifact.add_file(str(path), name=published_name)
         logged_artifact = run.log_artifact(artifact)
         logged_artifact.wait()
-        wandb_receipt = _wandb_identity(run, logged_artifact, artifact_name=artifact_name)
-        _write_json(output / "wandb_receipt.json", wandb_receipt)
+        after_upload_snapshots = [
+            _file_identity_and_state(path, published_name=published_name) for published_name, path in upload_paths
+        ]
+        if after_upload_snapshots != uploaded_file_snapshots:
+            raise RuntimeError("a Phase 2g smoke artifact changed during W&B upload")
+        wandb_receipt = _wandb_identity(
+            run,
+            logged_artifact,
+            artifact_name=artifact_name,
+            settings=settings,
+            files=uploaded_file_identities,
+            config_sha256=config_sha256,
+        )
 
         receipt = {
             "schema_version": SMOKE_SCHEMA,
-            "status": "success",
+            "status": "pending-postflight",
+            "terminal_status": "pending-postflight",
+            "postflight_required": True,
             "execution_id": settings.execution_id,
             "created_utc": datetime.now(UTC).isoformat(),
             "evidence_level": "integration-smoke",
             "claim_boundary": CLAIM_BOUNDARY,
             "synthetic_inputs_only": True,
             "dataset_or_cache_access": False,
+            "resource_policy": "diagnostic-only",
             "config": config,
-            "config_sha256": _canonical_sha256(config),
+            "config_sha256": config_sha256,
             "runtime_identity": runtime_identity,
             "total_optimizer_steps": global_step,
             "expected_optimizer_steps": len(ARMS) * settings.max_steps,
@@ -596,27 +881,30 @@ def run_training_smoke(
             "finite": True,
             "wandb": wandb_receipt,
         }
-        _write_json(output / "training_receipt.json", receipt)
         run.summary.update(
             {
-                "status": "success",
+                "status": "pending-postflight",
+                "validation/postflight/status": "pending",
                 "evidence_level": "integration-smoke",
                 "total_optimizer_steps": global_step,
                 "synthetic_inputs_only": True,
+                "config_sha256": config_sha256,
+                "artifact_files_sha256": uploaded_files_sha256,
             }
         )
         run.finish(exit_code=0)
         finished = True
-        (output / "SUCCESS").write_text("success\n", encoding="utf-8")
+        _write_json(output / "wandb_receipt.json", wandb_receipt)
+        _write_json(output / "training_receipt.json", receipt)
         return receipt
     except Exception:
         if run is not None and not finished:
-            try:
+            with suppress(Exception):
                 run.summary.update({"status": "failed", "evidence_level": "integration-smoke"})
+            with suppress(Exception):
                 run.log({"terminal/failure": 1})
+            with suppress(Exception):
                 run.finish(exit_code=1)
-            except Exception:
-                pass
         raise
 
 

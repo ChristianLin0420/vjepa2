@@ -11,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SBATCH = ROOT / "slurm" / "phase2g_training_smoke.sbatch"
 SUBMITTER = ROOT / "slurm" / "submit_phase2g_training_smoke.sh"
+VALIDATOR = ROOT / "slurm" / "validate_phase2g_training_smoke.py"
 ACCOUNT = "edgeai_tao-ptm_image-foundation-model-clip"
 PARTITIONS = "polar4,polar3,polar,batch_block1,grizzly,batch_block2,batch_block3"
 
@@ -112,14 +113,30 @@ def test_sbatch_is_one_short_gpu_allocation_with_exact_runner_contract() -> None
     assert directives["nodes"] == "1"
     assert directives["ntasks"] == "1"
     assert directives["gres"] == "gpu:1"
+    assert directives["cpus-per-task"] == "8"
+    assert directives["mem"] == "32G"
     hours, minutes, seconds = (int(value) for value in directives["time"].split(":"))
     assert hours * 3600 + minutes * 60 + seconds <= 30 * 60
     assert "--array" not in source
     assert 'scontrol show job -o "$JOB_ID"' in source
-    for allocation_field in ("Account", "Partition", "NumNodes", "NumTasks", "AllocTRES", "TimeLimit"):
-        assert allocation_field in source
-    assert "time_seconds <= 30 * 60" in source
-    assert "ArrayJobId" in source and "ArrayTaskId" in source
+    validator = VALIDATOR.read_text(encoding="utf-8")
+    for allocation_field in (
+        "Account",
+        "Partition",
+        "NumNodes",
+        "NumTasks",
+        "NumCPUs",
+        "CPUs/Task",
+        "AllocTRES",
+        "TimeLimit",
+        "ArrayJobId",
+        "ArrayTaskId",
+    ):
+        assert allocation_field in validator
+    assert "EXPECTED_CPUS = 8" in validator
+    assert "EXPECTED_MEMORY_MIB = 32 * 1024" in validator
+    assert "MAX_TIME_SECONDS = 30 * 60" in validator
+    assert "--allocation-only" in source
     assert "torch.cuda.device_count() != 1" in source
     assert '"$REPO_ROOT/scripts/run_phase2g_training_smoke.py"' in source
     for argument in (
@@ -140,21 +157,14 @@ def test_sbatch_is_one_short_gpu_allocation_with_exact_runner_contract() -> None
 def test_sbatch_requires_complete_output_contract_before_success() -> None:
     source = SBATCH.read_text(encoding="utf-8")
     runner_position = source.index("run_phase2g_training_smoke.py")
+    postflight_position = source.rindex('"$REPO_ROOT/slurm/validate_phase2g_training_smoke.py"')
     success_position = source.rindex("printf 'pass\\n' >\"$JEPA4D_JOB_LOG_DIR/SUCCESS\"")
-    assert runner_position < success_position
-    for artifact in (
-        "training_receipt.json",
-        "steps.jsonl",
-        "checkpoints/M0.pt",
-        "checkpoints/M1.pt",
-        "checkpoints/M2.pt",
-        "checkpoints/M3.pt",
-        "wandb_receipt.json",
-        "SUCCESS",
-    ):
-        assert artifact in source
-        assert source.index(artifact) < success_position
-    assert '[[ -f "$artifact" && ! -L "$artifact" && -s "$artifact" ]]' in source
+    assert runner_position < postflight_position < success_position
+    assert '[[ -f "$STAGE_OUTPUT/SUCCESS" && ! -L "$STAGE_OUTPUT/SUCCESS"' in source
+    assert "postflight/postflight-*.json" in source
+    assert "wandb-final/wandb-final-*.json" in source
+    assert "terminal/terminal-*.json" in source
+    assert "exactly one immutable receipt per terminal stage" in source
 
 
 def test_submitter_has_clean_fresh_safe_and_fail_closed_gates() -> None:
@@ -166,7 +176,7 @@ def test_submitter_has_clean_fresh_safe_and_fail_closed_gates() -> None:
     assert 'DEFAULT_SUFFIX="${SHORT}-${STAMP}-${NONCE}"' in source
     assert "execution, W&B run, and Slurm job names must be distinct" in source
     assert "reject_sensitive_identifier JEPA4D_JOB_NAME" in source
-    assert '[[ "$MAX_STEPS" =~ ^([1-9]|10)$ ]]' in source
+    assert '[[ "$MAX_STEPS" == "3" ]]' in source
     assert 'exec 9>"$LOCK_ROOT/slurm-submit.lock"' in source
     assert 'squeue -r -h -u "$SCHEDULER_USER" -o "%i"' in source
     assert "ACTIVE_STATES" not in source
@@ -227,14 +237,14 @@ def test_submitter_refuses_eight_or_more_expanded_active_tasks(tmp_path: Path, a
     assert not Path(environment["FAKE_SBATCH_CAPTURE"]).exists()
 
 
-@pytest.mark.parametrize("max_steps", ("0", "11", "1.5", "three"))
+@pytest.mark.parametrize("max_steps", ("0", "1", "2", "4", "10", "11", "1.5", "three"))
 def test_submitter_rejects_invalid_step_bound(tmp_path: Path, max_steps: str) -> None:
     repo, fake_bin = _fixture_repo(tmp_path)
     environment = _submission_environment(repo, fake_bin, tmp_path)
     environment["JEPA4D_MAX_STEPS"] = max_steps
     result = _run_submitter(repo, environment)
     assert result.returncode == 2
-    assert "must be an integer from 1 through 10" in result.stderr
+    assert "requires exactly three steps per arm" in result.stderr
     assert not Path(environment["FAKE_SBATCH_CAPTURE"]).exists()
 
 
