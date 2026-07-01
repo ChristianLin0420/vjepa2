@@ -107,6 +107,8 @@ def test_submitter_has_exact_held_dependency_and_dry_run_contract() -> None:
     assert 'anchor_branch="phase2g-pushed-${SHORT}-${NONCE}"' in source
     assert 'branch --set-upstream-to="$anchor_branch"' in source
     assert "JEPA4D_LOG_ROOT=$LOG_ROOT" in source
+    assert 'export PYTHONPATH="$ROOT"' in source
+    assert "PYTHONPATH=$ROOT" in source
     assert "JEPA4D_EXECUTION_WORKTREE=1" in source
     assert "submitted=false" in source
     assert "ALL," not in source

@@ -83,7 +83,7 @@ bindings:
       - path: jepa4d/tests/test_phase2g_formal_core.py
         file_sha256: 986ce54d028c8a2822471551b4db406bf39c1c21a05db78a32a8bc1217565d1b
       - path: jepa4d/tests/test_phase2g_formal_slurm.py
-        file_sha256: 3b28246aee71820dd7e81521c0aeb671f2fbafe79e105bf2680d4e9d3698b8b2
+        file_sha256: b3e79072c85f1b13470d09b3fa861efd22d068cddde660080ae6dfcc43c3bc3d
       - path: jepa4d/tests/test_phase2g_formal_postflight.py
         file_sha256: 060dcdf88932c973866d34f9ffecb29f958f2fea854c6fece6bb40d94ce56154
       - path: scripts/build_phase2g_data_cache.py
@@ -113,7 +113,7 @@ bindings:
       - path: slurm/phase2g_postflight.py
         file_sha256: 5bcd938b8177b5e86d8d5590e2abaadebd905be54dcc17ca99cb990e076e5f32
       - path: slurm/submit_phase2g.sh
-        file_sha256: 8e7ac59830b10442ab1ba919253feeb884c8659d90461c3e3b83b7a308339a11
+        file_sha256: 3cc9814215311568091a44ac7686352e5ae287ebbb15398ad88e18b13d8caa65
       - path: slurm/phase2g_tests.sbatch
         file_sha256: cd406aa1968dfdbd4d53bf4fe9968f07eb297258472e188edb254b4996027bce
       - path: slurm/phase2g_opacity.sbatch
