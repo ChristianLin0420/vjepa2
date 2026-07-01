@@ -36,6 +36,9 @@ The geometry-specific design is now frozen in the
 internal-research authorization and DIODE kept sealed. This authorizes the formal DAG but is not a result: no Phase 2g-A
 quality row is promoted here until strict terminal postflight completes. The earlier synthetic preflight remains
 controlled-fixture evidence outside the scientific DAG.
+The first formal attempt stopped at HG for a scheduler array-ID/accounting race before HG produced scientific output;
+the retained incident and no-science-change recovery are recorded in
+[the Phase 2g-A HG infrastructure incident](2026-07-01-phase2g-hg-infrastructure-incident.md).
 
 ## Evidence levels
 

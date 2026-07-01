@@ -15,6 +15,7 @@ import math
 import os
 import re
 import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -266,7 +267,7 @@ def scheduler_completed_many(job_ids: Sequence[str]) -> bool:
             "-X",
             "-j",
             ",".join(requested),
-            "--format=JobIDRaw%64,State,ExitCode",
+            "--format=JobID%64,State,ExitCode",
             "--parsable2",
         ),
         capture_output=True,
@@ -283,6 +284,24 @@ def scheduler_completed_many(job_ids: Sequence[str]) -> bool:
         and row[2] == "0:0"
     }
     return result.returncode == 0 and completed == set(requested)
+
+
+def wait_for_scheduler_completion(
+    job_ids: Sequence[str],
+    *,
+    timeout_seconds: float = 120.0,
+    poll_seconds: float = 2.0,
+) -> bool:
+    """Allow Slurm accounting to settle after an ``afterok`` array dependency fires."""
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if scheduler_completed_many(job_ids):
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(poll_seconds, remaining))
 
 
 def validate_wandb(receipt: Mapping[str, Any]) -> None:
@@ -398,7 +417,9 @@ def build_provenance(
     ):
         raise ValueError("test receipt is not bound to this graph/commit")
     validate_wandb(test)
-    if expected_parents and not scheduler_completed_many([str(jobs[parent]["job_id"]) for parent in expected_parents]):
+    if expected_parents and not wait_for_scheduler_completion(
+        [str(jobs[parent]["job_id"]) for parent in expected_parents]
+    ):
         raise ValueError("one or more direct parents are not scheduler COMPLETED 0:0")
     parent_rows = []
     for parent in expected_parents:

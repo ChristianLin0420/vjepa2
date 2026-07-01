@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,8 @@ from slurm.phase2g_contract import (
     expected_labels,
     parent_map,
     reject_credentials,
+    scheduler_completed_many,
+    wait_for_scheduler_completion,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +60,59 @@ def test_credential_redactor_allows_governance_hashes_but_rejects_credentials() 
     for key in ("authorization", "authorization_header", "api_key", "access_token", "password"):
         with pytest.raises(ValueError, match="credential-like field"):
             reject_credentials({key: "opaque-value"})
+
+
+def test_scheduler_completion_uses_logical_array_ids_not_cluster_raw_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(command: tuple[str, ...], **_kwargs: object) -> SimpleNamespace:
+        assert "--format=JobID%64,State,ExitCode" in command
+        return SimpleNamespace(
+            returncode=0,
+            stdout=("29699312_0|COMPLETED|0:0\n29699312_1|COMPLETED|0:0\n29699312_2|COMPLETED|0:0\n"),
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert scheduler_completed_many(("29699312_0", "29699312_1", "29699312_2"))
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout"),
+    (
+        (0, "29699312_0|COMPLETED|0:0\n"),
+        (0, "29699312_0|COMPLETING|0:0\n29699312_1|COMPLETED|0:0\n"),
+        (0, "29699312_0|COMPLETED|0:0\n29699312_1|FAILED|1:0\n"),
+        (1, "29699312_0|COMPLETED|0:0\n29699312_1|COMPLETED|0:0\n"),
+    ),
+)
+def test_scheduler_completion_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    stdout: str,
+) -> None:
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=returncode, stdout=stdout),
+    )
+    assert not scheduler_completed_many(("29699312_0", "29699312_1"))
+
+
+def test_scheduler_completion_waits_for_accounting_to_settle(monkeypatch: pytest.MonkeyPatch) -> None:
+    observations = iter((False, False, True))
+    sleeps: list[float] = []
+    monkeypatch.setattr("slurm.phase2g_contract.scheduler_completed_many", lambda _job_ids: next(observations))
+    monkeypatch.setattr("slurm.phase2g_contract.time.sleep", sleeps.append)
+    assert wait_for_scheduler_completion(("29699312_47",), timeout_seconds=10.0, poll_seconds=0.01)
+    assert sleeps == [0.01, 0.01]
+
+
+def test_scheduler_completion_wait_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    times = iter((0.0, 0.4, 1.0))
+    sleeps: list[float] = []
+    monkeypatch.setattr("slurm.phase2g_contract.scheduler_completed_many", lambda _job_ids: False)
+    monkeypatch.setattr("slurm.phase2g_contract.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("slurm.phase2g_contract.time.sleep", sleeps.append)
+    assert not wait_for_scheduler_completion(("29699312_47",), timeout_seconds=1.0, poll_seconds=0.6)
+    assert sleeps == [0.6]
 
 
 def test_array_mapping_is_bijective_and_stage_specific() -> None:
