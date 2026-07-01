@@ -83,7 +83,7 @@ bindings:
       - path: jepa4d/tests/test_phase2g_formal_core.py
         file_sha256: 986ce54d028c8a2822471551b4db406bf39c1c21a05db78a32a8bc1217565d1b
       - path: jepa4d/tests/test_phase2g_formal_slurm.py
-        file_sha256: b3e79072c85f1b13470d09b3fa861efd22d068cddde660080ae6dfcc43c3bc3d
+        file_sha256: 55d25709df9427af364760ab95a064720d7fbe5341d585e6b097b5b247e1b9ff
       - path: jepa4d/tests/test_phase2g_formal_postflight.py
         file_sha256: 060dcdf88932c973866d34f9ffecb29f958f2fea854c6fece6bb40d94ce56154
       - path: scripts/build_phase2g_data_cache.py
@@ -103,7 +103,7 @@ bindings:
       - path: scripts/write_phase2g_dependency_graph.py
         file_sha256: b7eb462745f13affd035607e0746c81ceafe47b55c03a38e0e001a524de62788
       - path: slurm/phase2g_contract.py
-        file_sha256: 30e21d91781865d7e122f69be47da02bc3f210331d273eaf9e182437ef588706
+        file_sha256: e5e23c303c84c06d3819aa074686d47dcc457243c35d4bcec97a44caab51d22c
       - path: slurm/phase2g_preflight.py
         file_sha256: be6d7505c34b20d21504cac862ff2c64df32c92625c391883abea4ef67110122
       - path: slurm/phase2g_stage_gate.py

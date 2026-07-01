@@ -15,6 +15,7 @@ from slurm.phase2g_contract import (
     array_coordinates,
     expected_labels,
     parent_map,
+    reject_credentials,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +45,18 @@ def test_exact_152_task_dag_and_only_t_is_root() -> None:
         "array_task_throttle": 8,
         "external_final_authorized": False,
     }
+
+
+def test_credential_redactor_allows_governance_hashes_but_rejects_credentials() -> None:
+    reject_credentials(
+        {
+            "sealed_authorization_sha256": "f" * 64,
+            "authorization_basis": "project-owner",
+        }
+    )
+    for key in ("authorization", "authorization_header", "api_key", "access_token", "password"):
+        with pytest.raises(ValueError, match="credential-like field"):
+            reject_credentials({key: "opaque-value"})
 
 
 def test_array_mapping_is_bijective_and_stage_specific() -> None:

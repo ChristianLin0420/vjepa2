@@ -93,8 +93,16 @@ def finite_tree(value: Any, location: str = "value") -> None:
 def reject_credentials(value: Any, location: str = "value") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
-            tokens = {token for token in re.split(r"[_.-]+", str(key).casefold()) if token}
-            if tokens & {"apikey", "authorization", "credential", "password", "secret", "token"}:
+            normalized = str(key).casefold().replace("-", "_").replace(".", "_")
+            tokens = {token for token in normalized.split("_") if token}
+            credential_tokens = {"apikey", "credential", "credentials", "password", "secret", "token"}
+            authorization_headers = {
+                "authorization",
+                "authorization_header",
+                "http_authorization",
+                "proxy_authorization",
+            }
+            if tokens & credential_tokens or {"api", "key"}.issubset(tokens) or normalized in authorization_headers:
                 raise ValueError(f"credential-like field at {location}.{key}")
             reject_credentials(child, f"{location}.{key}")
     elif isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
