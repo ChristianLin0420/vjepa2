@@ -1,14 +1,14 @@
 schema_version: jepa4d-phase2-geometry-readiness-v1
-pack_version: 2026-06-30-wave-a-v1
-scope: metadata-only-no-target-access
+pack_version: 2026-06-30-wave-a-v3
+scope: phase2g-sun-development-authorization
 
 bindings:
   registry:
     path: configs/validation/dataset_registry.yaml
-    file_sha256: 3a71e17b5cbc52eca7b7ca9bb11ee576c6519ca9f3940eda0627c2c2ec5e6f7f
-    semantic_sha256: 4dd75d40bed2228e3b60fb68d8ec325b6a48bf7b0be2d197ab64334ff4c7b11a
+    file_sha256: 2c9c2197756d8f0a119ed72416536fbc71a18ac05594584355da83374814115e
+    semantic_sha256: 4a2f31b7cf060dc28c4126f9b8165bd1886d7925720e21510631713d6b1c400e
     schema_version: jepa4d-validation-registry-v1
-    portfolio_version: 2026-06-30-wave-a-v1
+    portfolio_version: 2026-06-30-wave-a-v3
   ledger:
     path: configs/validation/consumed_test_ledger.yaml
     file_sha256: 9b31001599d867f26b07ecc6f67e6405725b861ff3f6d2d678bb593ff1f7f800
@@ -20,8 +20,12 @@ bindings:
     externally_append_only: false
   specification:
     path: docs/validation/PHASE2_GEOMETRY.md
-    file_sha256: 60666a1d11d81305e9586fe6a9ec7bd0fb6a81a7e75a7a8b21c782366dd9365a
-    status: proposed-not-preregistered
+    file_sha256: fea701e55b9c5cc71bf1aa460af7328d2e0a93907ac452fa40171c816b4a03bb
+    status: baseline-with-authorized-preregistration
+  preregistration:
+    path: docs/experiments/2026-06-30-phase2g-quality-first-preregistered.md
+    file_sha256: dc4d46e6fff31e310b056d4124b0eb25e12af2f74fe93665bff77e361868e2c8
+    status: preregistered-authorized
   runtime:
     scope: consumed-phase2b-official-smoke
     terminal_receipt: not-bound
@@ -59,6 +63,125 @@ bindings:
       - path: jepa4d/tests/test_validation_dashboard.py
         file_sha256: d343da1c7214c90f84d53e54dd1873df3781b857eb26ddbc63154ae329a331ed
         role: test
+  phase2g_runtime:
+    scope: phase2g-formal-sun-development
+    status: hash-bound-complete
+    final_hash_binding_required: false
+    files:
+      - path: jepa4d/evaluation/phase2g_data.py
+        file_sha256: 39df9d9078ed79d399ad4edb86ff57ef3441645c2b1e5d14b4353cb3f8d2621b
+      - path: jepa4d/evaluation/phase2g_metrics.py
+        file_sha256: 172ee4cdd128e8660dbe75da0face15181d56828f9db749ab2830057949447fe
+      - path: jepa4d/evaluation/phase2g_visualization.py
+        file_sha256: bb32c5982a3ef075f4bc7bc719c0711d3e70624238e6eb40f437a6ce34e99947
+      - path: jepa4d/training/phase2g_protocol.py
+        file_sha256: 8dd9737f4caabc4f633107da2f528315d4d4eff5146760731eca6f89bf9cab1a
+      - path: jepa4d/training/phase2g_runtime.py
+        file_sha256: 23c5f5405b41ed190fe1564e89d8e544267cb0656b749af43afe121090d5fde1
+      - path: jepa4d/training/phase2g_training.py
+        file_sha256: 21f4c6a9dc10ddf9d788cec493dde1fd2f643303f17a00fbcf4b53f10ed4c4c9
+      - path: jepa4d/tests/test_phase2g_formal_core.py
+        file_sha256: 986ce54d028c8a2822471551b4db406bf39c1c21a05db78a32a8bc1217565d1b
+      - path: jepa4d/tests/test_phase2g_formal_slurm.py
+        file_sha256: 3b28246aee71820dd7e81521c0aeb671f2fbafe79e105bf2680d4e9d3698b8b2
+      - path: jepa4d/tests/test_phase2g_formal_postflight.py
+        file_sha256: 060dcdf88932c973866d34f9ffecb29f958f2fea854c6fece6bb40d94ce56154
+      - path: scripts/build_phase2g_data_cache.py
+        file_sha256: a98b3188b1d7dfa0fefadf83527b27d4aa5ed9ef0ecf3358fe24cbe193763258
+      - path: scripts/audit_phase2g_formal.py
+        file_sha256: 7865534af0c7c6c6672a1a560b64aa37f1481151f58bb583279bd1c800adecc9
+      - path: scripts/run_phase2g_tuning.py
+        file_sha256: 4c392e13c201c2b7deb37a0121e5361682334650278f8b7b8f7a6215c0259f6e
+      - path: scripts/select_phase2g_learning_rates.py
+        file_sha256: 1390c6dfa813bda5b0d4b408ffc3e734e3de75e9d5ba6d07cd81c4fb17e716a1
+      - path: scripts/run_phase2g_formal_training.py
+        file_sha256: 350c87ddd0f37b9c613c049a50889b4f9bd7b0c4e1053043b7bb006ce94210f7
+      - path: scripts/evaluate_phase2g_heldout.py
+        file_sha256: 73a21a91ada6ec21ea7bd27c7ea36a6195bfcf32884d671efecf1008b480b1ff
+      - path: scripts/select_phase2g_survivor.py
+        file_sha256: 0cf87514c69a4fda92d11b67e44f320ed9bc63de41cf09307a423ed806ab00f0
+      - path: scripts/write_phase2g_dependency_graph.py
+        file_sha256: b7eb462745f13affd035607e0746c81ceafe47b55c03a38e0e001a524de62788
+      - path: slurm/phase2g_contract.py
+        file_sha256: 30e21d91781865d7e122f69be47da02bc3f210331d273eaf9e182437ef588706
+      - path: slurm/phase2g_preflight.py
+        file_sha256: be6d7505c34b20d21504cac862ff2c64df32c92625c391883abea4ef67110122
+      - path: slurm/phase2g_stage_gate.py
+        file_sha256: 5f6fb4e55699416a960fa29cc3474fad348877391f62dc797326ec4ff5636bc9
+      - path: slurm/phase2g_test_runner.py
+        file_sha256: 6bbd4a42c536af635a062dc902a312bc6818072c567b2aaef9a6b771ac756e23
+      - path: slurm/phase2g_postflight.py
+        file_sha256: 5bcd938b8177b5e86d8d5590e2abaadebd905be54dcc17ca99cb990e076e5f32
+      - path: slurm/submit_phase2g.sh
+        file_sha256: 8e7ac59830b10442ab1ba919253feeb884c8659d90461c3e3b83b7a308339a11
+      - path: slurm/phase2g_tests.sbatch
+        file_sha256: cd406aa1968dfdbd4d53bf4fe9968f07eb297258472e188edb254b4996027bce
+      - path: slurm/phase2g_opacity.sbatch
+        file_sha256: d21e04fbc4e623b269b7b0181c65c942c81387caf1dbaa22f51aa438b6ef0e5a
+      - path: slurm/phase2g_cache.sbatch
+        file_sha256: 0ff56c08c385f3f7d463842d698d87bf409774eca9ccd7c224d142aec28d2a9a
+      - path: slurm/phase2g_audit.sbatch
+        file_sha256: d24e3067bb1312d962da82f5dc66c2daaf0ca3c4edb31744f551499f1e9ad959
+      - path: slurm/phase2g_array_dispatch.sbatch
+        file_sha256: 7b31ee0523380922222676f2fd45320973dbca3e010c4d4b5581f2a667395906
+      - path: slurm/phase2g_tune.sbatch
+        file_sha256: 2f2df60f1714aaa4106c8d63d7845254bda897e846a90da6f9b0dca6462335bc
+      - path: slurm/phase2g_lr_select.sbatch
+        file_sha256: ff95bf1e6f7368572600e8d6e9269df60972a3fe361495cb500e0929549359d6
+      - path: slurm/phase2g_train.sbatch
+        file_sha256: 932225021c606b673ae8260922fcde59cf5dd0f78ab2ce94c0ab0e9163647a18
+      - path: slurm/phase2g_evaluate.sbatch
+        file_sha256: 64e5011712223bff1d1ecdc7253fe8013161acd03b3cd363e847823e33bc6b96
+      - path: slurm/phase2g_select.sbatch
+        file_sha256: b3c9e8b811594a31c8b32bdd9bd91ece6c8143c93de09431c8f36aa20d447120
+      - path: slurm/phase2g_external_guard.sbatch
+        file_sha256: c2f784273e0aca1b497534f13719baf7f132867ffc15fc0db8f5a4c188113e6a
+      - path: slurm/phase2g_postflight.sbatch
+        file_sha256: c5791b92bb80139d62de06cda6d4fb0458b9c2e1084aab8570908ebafe089286
+      - path: scripts/materialize_phase2g_sun.py
+        file_sha256: 88d43d5844801fa12ff285a7972e073f6f1c345c9bfbc7049c0250b523d165dd
+      - path: slurm/lib.sh
+        file_sha256: 3baefa34abdd675ad2462d5fc98b6f5c809b339fd436028413a9c40f8a9b53f7
+      - path: scripts/check_cuda.py
+        file_sha256: 59dadf1bcb8b14596a3d2076408caebfaddeaa80a99c9909a44cb15f340bb3e3
+      - path: jepa4d/benchmarks/geometry/sun_rgbd.py
+        file_sha256: 2ef18e7d3e3d1ea48a5a7545a26713b9122fe7899b71fc108f53e08105c06149
+      - path: jepa4d/data/camera_geometry.py
+        file_sha256: 67702e2c90f655533618396c42d697be23343de933df877713d078870d3c2cac
+      - path: jepa4d/data/rgb_input.py
+        file_sha256: 20c5c5f23f66bcfbb8a8011d8c43fd1a1493ca35a2b7b9ad7cb42c58651b16c2
+      - path: jepa4d/data/schemas.py
+        file_sha256: de043cbddbeeb59bc73b3f4c381cbd238130e3d5e4de1b9f42122685d072aafe
+      - path: jepa4d/data/transforms.py
+        file_sha256: fbf026b5a0432446b116af6ceeeeaa1fccb31124f0edc253513c611e9fc06d7a
+      - path: jepa4d/evaluation/phase2e_feature_cache.py
+        file_sha256: 27036a60e463628b3f36179f17b2dd8d405a367139649e1a21fe16a3767b364c
+      - path: jepa4d/evaluation/phase2f_camera_controls.py
+        file_sha256: 544cb3b02d0e59739a6570772c055018a4fde734674dd368b9e85757a8bb2221
+      - path: jepa4d/evaluation/phase2f_data_cache.py
+        file_sha256: 055d2ae6062bd50a9d93527e9bad1dd4757bac328add90f664b4d44a80e1fef9
+      - path: jepa4d/evaluation/phase2f_metrics.py
+        file_sha256: 926dea0ae11f0a3f297199cfac36640ce739a09a82cbc07c4dd1e8fb6000d884
+      - path: jepa4d/models/geometry_student.py
+        file_sha256: 896dfe29885caeb97f6e134390868656ce573c958177a830063ee006f4e2b614
+      - path: jepa4d/models/phase2f_scale_geometry.py
+        file_sha256: 39f7e8925b6d36ebf6cdfbe0d003444a59ec7f94a4c5b4ea2b7202d4bd062de7
+      - path: jepa4d/models/vjepa21_adapter.py
+        file_sha256: ea6ce90684691c89eb23cc7c66a8c4f358187852834550ca464cbb5c61a4171b
+      - path: jepa4d/training/phase2f_losses.py
+        file_sha256: 643207ed71205eac9908d350c48c484171a2317dfae503e673bd38fca9c800ef
+      - path: jepa4d/training/phase2f_training.py
+        file_sha256: 5195b5890e63866926ee0694b9c24564a81220253ab7f0ee6eccc854b94cc2a6
+      - path: jepa4d/validation/_content.py
+        file_sha256: de6d802958951b823c37d95e6cadb384a0f63656eccc0e1c44c6c2abcd9130c3
+      - path: jepa4d/validation/access.py
+        file_sha256: a7fe283dd879a9db67d35f3db993b49cbc0df7ecd6a39fdc8dc44ebb35bd13db
+      - path: jepa4d/validation/geometry_readiness.py
+        file_sha256: 22ac2f5ddc91f41f61ff6136380c3e75f756fd933db240323e037d2e3d019979
+      - path: jepa4d/validation/ledger.py
+        file_sha256: 0c679f9241616a86c6ac6a458e0bc2f5ba5719402a22ca4f3178dcbcc7b3dc66
+      - path: jepa4d/validation/registry.py
+        file_sha256: 1ecbd121bd147c77a067a515a9e021f301e408acc796d5ec7ead1dda429812bd
 
 gates:
   - gate_id: metadata-audit
@@ -98,10 +221,10 @@ gates:
     notes: A hash-bound clean-commit runner authorizes only the registered consumed Phase 2b regression before resolving the verified archive and can support integration/regression diagnostics only. Phase 2c remains unwrapped, neither split has Wave A manifest proof, and no fresh transfer, model-selection, or promotion claim is supported.
 
   - gate_id: sun-development
-    status: policy-blocked
+    status: execution-ready
     metadata_ready: true
-    execution_ready: false
-    pack_authorizes_data_access: false
+    execution_ready: true
+    pack_authorizes_data_access: true
     sealed: false
     targets:
       - dataset_id: sun-rgbd.geometry-development
@@ -112,30 +235,17 @@ gates:
         split_id: sun-rgbd.phase2f-four-family-development
         registry_target_state: open
         ledger_state: consumed
-    registered_operations: [development-evaluation, regression, mechanism-diagnostic, reporting]
-    blockers:
-      - code: SUN_CONSTITUENT_LICENSE_PENDING
-        category: legal
-        description: No approved blanket license covers every selected SUN RGB-D constituent source; the registry legal audit remains pending.
-      - code: SUN_IDENTITY_ONLY_SELECTION_UNFROZEN
-        category: governance
-        description: The balanced four-family identity-only selection algorithm is not frozen under the Wave A target-isolation contract.
-      - code: SUN_INVALID_DEPTH_POLICY_UNFROZEN
-        category: preregistration
-        description: The insufficient-valid-depth failure or replacement policy is not preregistered.
-      - code: SUN_LEGACY_MANIFEST_NOT_WAVE_A
-        category: manifest
-        description: The Phase 2e file combines train, validation, and test rows and stores target-derived validation statistics instead of one target-free manifest per registered split.
-      - code: SUN_PHASE2F_RECEIPT_NOT_IN_CLEAN_CLONE
-        category: manifest
-        description: The Phase 2f registered id_manifest path is an ignored local output receipt, not a repository-tracked portable membership artifact.
-      - code: SUN_GOVERNED_TARGET_SEPARATION_MISSING
-        category: implementation
-        description: Existing enumeration and loading APIs expose depth paths and are not gated by the registry-and-ledger access controller.
-      - code: PHASE2_PREREGISTRATION_MISSING
-        category: preregistration
-        description: The Phase 2 geometry specification remains proposed and has not been frozen as a hash-bound formal preregistration.
-    notes: All named SUN families are consumed development evidence; this pack does not authorize further decoding, cache construction, training, or evaluation.
+      - dataset_id: sun-rgbd.geometry-development
+        split_id: sun-rgbd.phase2g-four-family-development
+        registry_target_state: open
+        ledger_state: null
+    registered_operations: [decode-smoke, training, tuning, calibration, checkpoint-selection, development-evaluation, regression, mechanism-diagnostic, reporting]
+    blockers: []
+    notes: >-
+      Project-owner internal-research-only use is approved under official citation and no-raw-redistribution conditions,
+      without claiming a standard license. The hash-bound preregistration authorizes only the new non-held-out 4,096-unit
+      Phase 2g development split and its registered operations; the two historical target splits remain consumed, and
+      DIODE remains sealed and unauthorized.
 
   - gate_id: diode-external
     status: sealed-blocked
@@ -180,6 +290,7 @@ legacy_manifest_gaps:
     legacy_schema: jepa4d-sunrgbd-sensor-blocked-v1
     scope_gap: The file contains 640 train, validation, and test samples while the registered split denotes only the 128 Kinect-v2 development-test scenes; it also contains target-derived depth statistics.
     migration_required: true
+    blocks_current_authorization: false
 
   - dataset_id: sun-rgbd.geometry-development
     split_id: sun-rgbd.phase2f-four-family-development
@@ -190,6 +301,7 @@ legacy_manifest_gaps:
     legacy_schema: jepa4d-phase2f-sun-dev-cache-receipt-v1
     scope_gap: The ignored local receipt binds caches and absolute execution paths but is not a portable target-free 512-scene membership artifact available in a clean clone.
     migration_required: true
+    blocks_current_authorization: false
 
   - dataset_id: tum-rgbd.geometry-regression
     split_id: tum-rgbd.phase2b-freiburg1-xyz-test
@@ -200,6 +312,7 @@ legacy_manifest_gaps:
     legacy_schema: legacy-tum-phase2b-v1.0.1
     scope_gap: The file combines train, validation, and test indices for one recording and lacks Wave A portfolio binding, target-isolation evidence, clusters, and typed unit rows.
     migration_required: true
+    blocks_current_authorization: false
 
   - dataset_id: tum-rgbd.geometry-regression
     split_id: tum-rgbd.phase2c-freiburg3-test
@@ -210,6 +323,7 @@ legacy_manifest_gaps:
     legacy_schema: jepa4d-tum-cross-sequence-v1
     scope_gap: The file combines two training, one validation, and two test recordings while the registered split denotes only the two Freiburg3 regression recordings.
     migration_required: true
+    blocks_current_authorization: false
 
 historical_overlaps:
   - kind: sun-family-membership
@@ -259,11 +373,13 @@ historical_overlaps:
 
 claim_boundary:
   supported:
-    - Repository metadata for the current Phase 2 registry, ledger, specification, and tracked legacy manifests is internally bound and auditable.
+    - Repository metadata for the current Phase 2 registry, ledger, authorized preregistration, and tracked legacy manifests is internally bound and auditable.
+    - SUN RGB-D has a hash-bound project-owner authorization for internal research under official citation and no-raw-redistribution conditions; no standard or blanket license is claimed.
+    - The non-held-out 4,096-unit Phase 2g SUN development split is authorized for its registered decode, training, tuning, calibration, checkpoint-selection, development-evaluation, mechanism-diagnostic, and reporting operations.
     - TUM and SUN results remain consumed historical or development evidence; TUM overlap is recomputable from tracked manifests, while the Phase 2f SUN overlap is a historical assertion committed by its recorded selection hash but unavailable for clean-clone recomputation.
     - DIODE remains sealed according to the bound registry and ledger metadata.
   prohibited:
-    - This pack does not authorize dataset access, decoding, cache access, training, regression execution, or evaluation.
-    - This pack does not establish SUN legal approval, a frozen Phase 2 preregistration, or scientific execution readiness.
+    - This pack does not authorize any data source, split, operation, or execution lineage outside the bound Phase 2g SUN development preregistration.
+    - The SUN project-owner authorization is not a standard license or raw-redistribution grant.
     - This pack does not authorize DIODE listing, extraction, sampling, decoding, hashing, statistics, visualization, caching, or external evaluation.
     - No SUN or TUM result in this lineage is fresh external confirmation.

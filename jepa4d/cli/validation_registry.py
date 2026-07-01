@@ -18,6 +18,7 @@ from jepa4d.validation.access import (
     write_sealed_target_authorization,
     write_sealed_target_selector_receipt,
 )
+from jepa4d.validation.geometry_readiness import GeometryReadinessPack
 from jepa4d.validation.ledger import (
     ConsumedTestLedger,
     EventStoreUnavailable,
@@ -29,7 +30,12 @@ from jepa4d.validation.ledger import (
     freeze_ledger,
     load_events,
 )
-from jepa4d.validation.registry import AccessOperation, DatasetRegistry, freeze_registry
+from jepa4d.validation.registry import (
+    AccessOperation,
+    DatasetRegistry,
+    RestrictedUseApprovalRecord,
+    freeze_registry,
+)
 from jepa4d.validation.split_manifest import SplitManifest
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -287,6 +293,8 @@ def schema_command(
     registry_path = output_dir / "dataset-registry.schema.json"
     ledger_path = output_dir / "consumed-test-ledger.schema.json"
     split_path = output_dir / "split-manifest.schema.json"
+    geometry_readiness_path = output_dir / "geometry-readiness.schema.json"
+    restricted_use_approval_path = output_dir / "restricted-data-use-approval.schema.json"
     authorization_path = output_dir / "sealed-target-authorization.schema.json"
     selector_path = output_dir / "sealed-target-selector-receipt.schema.json"
     _atomic_write_text(
@@ -302,6 +310,14 @@ def schema_command(
         json.dumps(SplitManifest.model_json_schema(), indent=2, sort_keys=True) + "\n",
     )
     _atomic_write_text(
+        geometry_readiness_path,
+        json.dumps(GeometryReadinessPack.model_json_schema(), indent=2, sort_keys=True) + "\n",
+    )
+    _atomic_write_text(
+        restricted_use_approval_path,
+        json.dumps(RestrictedUseApprovalRecord.model_json_schema(), indent=2, sort_keys=True) + "\n",
+    )
+    _atomic_write_text(
         authorization_path,
         json.dumps(SealedTargetAuthorization.model_json_schema(), indent=2, sort_keys=True) + "\n",
     )
@@ -314,6 +330,8 @@ def schema_command(
             "registry_schema": str(registry_path),
             "ledger_schema": str(ledger_path),
             "split_manifest_schema": str(split_path),
+            "geometry_readiness_schema": str(geometry_readiness_path),
+            "restricted_data_use_approval_schema": str(restricted_use_approval_path),
             "sealed_target_authorization_schema": str(authorization_path),
             "sealed_target_selector_schema": str(selector_path),
         }

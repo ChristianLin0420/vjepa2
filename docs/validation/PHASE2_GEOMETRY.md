@@ -2,7 +2,9 @@
 
 ## Status and decision boundary
 
-**Status:** proposed validation plan; not preregistered and not authorized for execution.
+**Status:** baseline validation plan. Phase 2g-A is separately
+[preregistered and authorized](../experiments/2026-06-30-phase2g-quality-first-preregistered.md) for the bounded SUN RGB-D
+internal-research development lineage; DIODE remains sealed and unauthorized.
 
 The objective is to select a geometry architecture that recovers useful relative shape, metric scale, calibrated
 uncertainty, and—where claimed—causally useful camera conditioning across sensor families. Scientific quality is evaluated
@@ -75,8 +77,11 @@ Access and license caveats:
 
 - the visible official page does not publish one blanket license covering every constituent image. Do not infer CC0 or
   another permissive license from Kaggle or other mirrors;
-- before expanding the cache, record the official download identity and review the original NYU Depth v2, B3DO, SUN3D,
-  SUN RGB-D annotation/toolbox, and redistribution terms applicable to the selected samples;
+- the project owner authorized the official collection for internal research on 2026-06-30 under the official SUN RGB-D,
+  NYU Depth v2, B3DO, and SUN3D citation conditions and a strict no-raw-redistribution boundary. The hash-bound approval is
+  [`sun_rgbd_internal_research_v1.yaml`](../../configs/validation/approvals/sun_rgbd_internal_research_v1.yaml);
+- this authorization is deliberately not represented as a standard or blanket license. It clears the bounded project
+  legal/governance review only and does not itself authorize data access, selection, cache construction, or training;
 - raw RGB/depth, previews, and source paths remain local restricted data and are excluded from W&B artifacts;
 - all previous Phase 2e/2f SUN samples and family labels are development-consumed, regardless of whether a particular
   candidate trained on them.
@@ -301,8 +306,10 @@ SHA-256 identities locally. Raw RGB/depth, protected archives, credentials, and 
 
 ### A. Data and legal freeze
 
-- [ ] Complete constituent-license review for every selected SUN RGB-D sample.
-- [ ] Freeze the balanced SUN selection algorithm and insufficient-valid-depth policy without target-driven cherry-picking.
+- [x] Record project-owner internal-research-only authorization for the official SUN RGB-D collection and its cited
+  constituents, with no standard-license claim and no raw redistribution.
+- [x] Freeze the balanced SUN selection algorithm and insufficient-valid-depth abort policy without target-driven
+  cherry-picking in the Phase 2g-A preregistration.
 - [ ] Revalidate consumed TUM identities as regression-only.
 - [ ] Validate DIODE opacity from prior metadata without touching the archive.
 
@@ -318,7 +325,7 @@ SHA-256 identities locally. Raw RGB/depth, protected archives, credentials, and 
   metric schema.
 - [ ] Implement M0/M1 evaluation-path invariance, M2/M3 K controls, and M3 zero-field intervention.
 - [ ] Freeze model identities, learning-rate search, health rules, losses, gradients, selection margins, and Slurm DAG.
-- [ ] Convert this specification into a hash-bound preregistration.
+- [x] Bind the authorized Phase 2g-A preregistration into the execution-readiness pack.
 
 ### C. Quality-first development
 

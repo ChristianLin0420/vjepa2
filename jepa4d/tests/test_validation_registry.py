@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pydantic import ValidationError
 
-from jepa4d.validation._content import canonical_json, sha256_value, verify_content_addressed_json
+from jepa4d.validation._content import canonical_json, sha256_file, sha256_value, verify_content_addressed_json
 from jepa4d.validation.access import DatasetAccessController
 from jepa4d.validation.ledger import ConsumedTestLedger
 from jepa4d.validation.registry import (
@@ -19,6 +19,7 @@ from jepa4d.validation.registry import (
     AccessOperation,
     DataRole,
     DatasetRegistry,
+    RestrictedUseApprovalRecord,
     freeze_registry,
 )
 
@@ -336,6 +337,76 @@ def test_pending_audit_blocks_data_access_but_not_metadata_audit() -> None:
     ).grants_data_access
 
 
+def test_restricted_use_authorization_is_distinct_from_a_standard_license() -> None:
+    entry = dataset_entry()
+    entry["license"] = {
+        "status": "approved",
+        "redistribution": "prohibited",
+        "privacy_notes": "Internal research only; no raw redistribution.",
+        "restricted_use_authorization": {
+            "schema_version": "jepa4d-restricted-data-use-authorization-v1",
+            "approval_record": "approvals/fixture.yaml",
+            "approval_record_sha256": "c" * 64,
+            "authorization_basis": "project-owner",
+            "scope": "internal-research-only",
+            "reviewer": "fixture owner",
+            "reviewed_at": "2026-06-30",
+            "standard_license_claimed": False,
+            "official_citation_required": True,
+            "raw_redistribution_allowed": False,
+        },
+    }
+    registry = DatasetRegistry.model_validate(registry_value(entry))
+    license_info = registry.datasets[0].license_info
+    assert license_info.name is None and license_info.terms_url is None
+    assert license_info.restricted_use_authorization is not None
+    assert registry.datasets[0].readiness_blockers == ()
+
+    entry["license"]["restricted_use_authorization"]["standard_license_claimed"] = True
+    with pytest.raises(ValidationError, match="standard_license_claimed"):
+        DatasetRegistry.model_validate(registry_value(entry))
+
+
+def test_checked_in_sun_restricted_use_approval_is_hash_bound_and_bounded() -> None:
+    root = Path(__file__).resolve().parents[2]
+    registry = DatasetRegistry.load(root / "configs/validation/dataset_registry.yaml")
+    sun = registry.dataset("sun-rgbd.geometry-development")
+    authorization = sun.license_info.restricted_use_authorization
+    assert authorization is not None
+    assert sun.license_info.name is None and sun.license_info.terms_url is None
+    assert sun.license_info.redistribution == "prohibited"
+    assert authorization.reviewer == "User-authorized project owner, 2026-06-30"
+    assert authorization.scope == "internal-research-only"
+    assert not authorization.standard_license_claimed
+    assert authorization.official_citation_required
+    assert not authorization.raw_redistribution_allowed
+    record_path = root / "configs/validation" / authorization.approval_record
+    assert sha256_file(record_path) == authorization.approval_record_sha256
+    record = RestrictedUseApprovalRecord.load(record_path)
+    assert record.dataset_id == sun.dataset_id
+    assert record.dataset_version == sun.source.version
+    assert record.reviewer == authorization.reviewer
+    assert record.required_citations == (
+        "SUN RGB-D, Song, Lichtenberg, and Xiao, CVPR 2015",
+        "NYU Depth v2, Silberman, Hoiem, Kohli, and Fergus, ECCV 2012",
+        "Berkeley B3DO, Janoch et al., ICCV Workshop 2011",
+        "SUN3D, Xiao, Owens, and Torralba, ICCV 2013",
+    )
+
+
+def test_restricted_use_approval_record_tampering_fails_registry_load(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    source_registry = root / "configs/validation/dataset_registry.yaml"
+    source_approval = root / "configs/validation/approvals/sun_rgbd_internal_research_v1.yaml"
+    registry_path = tmp_path / "dataset_registry.yaml"
+    approval_path = tmp_path / "approvals/sun_rgbd_internal_research_v1.yaml"
+    approval_path.parent.mkdir()
+    registry_path.write_bytes(source_registry.read_bytes())
+    approval_path.write_text(source_approval.read_text(encoding="utf-8") + "# tampered\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="restricted-use approval record hash mismatch"):
+        DatasetRegistry.load(registry_path)
+
+
 def test_freeze_is_deterministic_and_detects_tampering(tmp_path: Path) -> None:
     source = tmp_path / "registry.yaml"
     source.write_text(yaml.safe_dump(registry_value(dataset_entry()), sort_keys=False), encoding="utf-8")
@@ -361,3 +432,7 @@ def test_checked_in_registry_and_json_schema_match_runtime_models() -> None:
     )
     schema = json.loads((root / "configs/validation/schemas/dataset-registry.schema.json").read_text())
     assert schema == DatasetRegistry.model_json_schema()
+    approval_schema = json.loads(
+        (root / "configs/validation/schemas/restricted-data-use-approval.schema.json").read_text()
+    )
+    assert approval_schema == RestrictedUseApprovalRecord.model_json_schema()

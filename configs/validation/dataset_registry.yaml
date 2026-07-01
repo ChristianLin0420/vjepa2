@@ -1,5 +1,5 @@
 schema_version: jepa4d-validation-registry-v1
-portfolio_version: 2026-06-30-wave-a-v1
+portfolio_version: 2026-06-30-wave-a-v3
 datasets:
   - dataset_id: robo4d.contract-fixture
     display_name: Robo4D-JEPA generated contract fixture
@@ -86,17 +86,29 @@ datasets:
     display_name: SUN RGB-D geometry development
     stages: [phase2]
     role: A1
-    status: historical-consumed
-    claim_use: Reusable development and regression only; prior Kinect-v2 and four-family results are consumed.
+    status: active-development
+    claim_use: Internal-research development and regression only; prior Kinect-v2 and four-family results are consumed.
     source:
       official_url: https://rgbd.cs.princeton.edu/
       version: SUNRGBD-v1
       citation: Song, Lichtenberg, and Xiao, SUN RGB-D, CVPR 2015, plus constituent dataset citations.
     license:
-      status: pending
+      status: approved
       redistribution: prohibited
-      privacy_notes: Internal research use; no raw samples are redistributed.
-      blocker: No unambiguous blanket license was found in the supplied archive; constituent terms require legal review.
+      privacy_notes: >-
+        Project-owner authorization is limited to internal research under official SUN RGB-D and constituent citation
+        conditions. Raw samples, paths, archives, previews, and reconstructive caches are not redistributed.
+      restricted_use_authorization:
+        schema_version: jepa4d-restricted-data-use-authorization-v1
+        approval_record: approvals/sun_rgbd_internal_research_v1.yaml
+        approval_record_sha256: d8195f903ba9d6a354c4cdf7f906ea33f47a9294e466406fd3b2790f66d3769f
+        authorization_basis: project-owner
+        scope: internal-research-only
+        reviewer: User-authorized project owner, 2026-06-30
+        reviewed_at: '2026-06-30'
+        standard_license_claimed: false
+        official_citation_required: true
+        raw_redistribution_allowed: false
     access:
       status: approved
       method: public
@@ -148,6 +160,17 @@ datasets:
         id_manifest_sha256: 9b22579d9c7e3c9789cbaabfe34e1592bfbf6ced54f6129f48453d123287e400
         expected_units: 512
         allowed_operations: [development-evaluation, regression, mechanism-diagnostic, reporting]
+      - split_id: sun-rgbd.phase2g-four-family-development
+        official_name: Phase-2g balanced four-family development universe
+        purpose: train
+        independent_unit: scene
+        target_state: open
+        targets_present: true
+        selection_rule: >-
+          Within each of kv1, kv2, realsense, and xtion, sort immutable sample IDs and select the first 1,024 whose decoded
+          target has at least 100 finite pixels satisfying 0.1 < depth_m < 10.0; abort if any family is insufficient.
+        expected_units: 4096
+        allowed_operations: [decode-smoke, training, tuning, calibration, checkpoint-selection, development-evaluation, mechanism-diagnostic, reporting]
     artifact_rules: &restricted_artifacts
       - artifact: raw-data
         local: restricted

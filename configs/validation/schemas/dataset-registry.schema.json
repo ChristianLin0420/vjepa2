@@ -400,6 +400,17 @@
           "title": "Redistribution",
           "type": "string"
         },
+        "restricted_use_authorization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RestrictedUseAuthorizationSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "status": {
           "$ref": "#/$defs/AuditStatus"
         },
@@ -422,6 +433,74 @@
         "privacy_notes"
       ],
       "title": "LicenseSpec",
+      "type": "object"
+    },
+    "RestrictedUseAuthorizationSpec": {
+      "additionalProperties": false,
+      "description": "Hash-bound project authorization when no standard data license is claimed.",
+      "properties": {
+        "approval_record": {
+          "title": "Approval Record",
+          "type": "string"
+        },
+        "approval_record_sha256": {
+          "title": "Approval Record Sha256",
+          "type": "string"
+        },
+        "authorization_basis": {
+          "const": "project-owner",
+          "title": "Authorization Basis",
+          "type": "string"
+        },
+        "official_citation_required": {
+          "const": true,
+          "title": "Official Citation Required",
+          "type": "boolean"
+        },
+        "raw_redistribution_allowed": {
+          "const": false,
+          "title": "Raw Redistribution Allowed",
+          "type": "boolean"
+        },
+        "reviewed_at": {
+          "minLength": 1,
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "reviewer": {
+          "minLength": 1,
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "jepa4d-restricted-data-use-authorization-v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scope": {
+          "const": "internal-research-only",
+          "title": "Scope",
+          "type": "string"
+        },
+        "standard_license_claimed": {
+          "const": false,
+          "title": "Standard License Claimed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "approval_record",
+        "approval_record_sha256",
+        "authorization_basis",
+        "scope",
+        "reviewer",
+        "reviewed_at",
+        "standard_license_claimed",
+        "official_citation_required",
+        "raw_redistribution_allowed"
+      ],
+      "title": "RestrictedUseAuthorizationSpec",
       "type": "object"
     },
     "SealedAuthoritySpec": {

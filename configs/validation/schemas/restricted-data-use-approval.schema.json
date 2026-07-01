@@ -1,0 +1,118 @@
+{
+  "additionalProperties": false,
+  "description": "Auditable project-owner decision; this is not a standard dataset license.",
+  "properties": {
+    "approval_id": {
+      "minLength": 1,
+      "title": "Approval Id",
+      "type": "string"
+    },
+    "authorization_basis": {
+      "const": "project-owner",
+      "title": "Authorization Basis",
+      "type": "string"
+    },
+    "claim_boundary": {
+      "minLength": 1,
+      "title": "Claim Boundary",
+      "type": "string"
+    },
+    "conditions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Conditions",
+      "type": "array"
+    },
+    "dataset_id": {
+      "pattern": "^[a-z0-9][a-z0-9._-]+$",
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "dataset_version": {
+      "minLength": 1,
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "decision": {
+      "const": "approved",
+      "title": "Decision",
+      "type": "string"
+    },
+    "official_citation_required": {
+      "const": true,
+      "title": "Official Citation Required",
+      "type": "boolean"
+    },
+    "raw_redistribution_allowed": {
+      "const": false,
+      "title": "Raw Redistribution Allowed",
+      "type": "boolean"
+    },
+    "raw_storage": {
+      "const": "local-restricted",
+      "title": "Raw Storage",
+      "type": "string"
+    },
+    "required_citations": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Required Citations",
+      "type": "array"
+    },
+    "reviewed_at": {
+      "minLength": 1,
+      "title": "Reviewed At",
+      "type": "string"
+    },
+    "reviewer": {
+      "minLength": 1,
+      "title": "Reviewer",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "jepa4d-restricted-data-use-approval-record-v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "const": "internal-research-only",
+      "title": "Scope",
+      "type": "string"
+    },
+    "standard_license_claimed": {
+      "const": false,
+      "title": "Standard License Claimed",
+      "type": "boolean"
+    },
+    "terms_observation": {
+      "minLength": 1,
+      "title": "Terms Observation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_id",
+    "dataset_id",
+    "dataset_version",
+    "decision",
+    "authorization_basis",
+    "scope",
+    "reviewer",
+    "reviewed_at",
+    "standard_license_claimed",
+    "official_citation_required",
+    "raw_redistribution_allowed",
+    "raw_storage",
+    "terms_observation",
+    "required_citations",
+    "conditions",
+    "claim_boundary"
+  ],
+  "title": "RestrictedUseApprovalRecord",
+  "type": "object"
+}

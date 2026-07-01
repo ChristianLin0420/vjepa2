@@ -141,20 +141,92 @@ class SourceSpec(StrictModel):
         return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), "", ""))
 
 
+class RestrictedUseAuthorizationSpec(StrictModel):
+    """Hash-bound project authorization when no standard data license is claimed."""
+
+    schema_version: Literal["jepa4d-restricted-data-use-authorization-v1"]
+    approval_record: str
+    approval_record_sha256: str
+    authorization_basis: Literal["project-owner"]
+    scope: Literal["internal-research-only"]
+    reviewer: str = Field(min_length=1)
+    reviewed_at: str = Field(min_length=1)
+    standard_license_claimed: Literal[False]
+    official_citation_required: Literal[True]
+    raw_redistribution_allowed: Literal[False]
+
+    @field_validator("approval_record")
+    @classmethod
+    def approval_record_is_safe_relative_path(cls, value: str) -> str:
+        path = Path(value)
+        if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+            raise ValueError("restricted-use approval_record must be a safe relative path")
+        return path.as_posix()
+
+    @field_validator("approval_record_sha256")
+    @classmethod
+    def approval_record_digest_is_sha256(cls, value: str) -> str:
+        if not SHA256_PATTERN.fullmatch(value):
+            raise ValueError("restricted-use approval_record_sha256 must be a lowercase SHA-256 digest")
+        return value
+
+
+class RestrictedUseApprovalRecord(StrictModel):
+    """Auditable project-owner decision; this is not a standard dataset license."""
+
+    schema_version: Literal["jepa4d-restricted-data-use-approval-record-v1"]
+    approval_id: str = Field(min_length=1)
+    dataset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]+$")
+    dataset_version: str = Field(min_length=1)
+    decision: Literal["approved"]
+    authorization_basis: Literal["project-owner"]
+    scope: Literal["internal-research-only"]
+    reviewer: str = Field(min_length=1)
+    reviewed_at: str = Field(min_length=1)
+    standard_license_claimed: Literal[False]
+    official_citation_required: Literal[True]
+    raw_redistribution_allowed: Literal[False]
+    raw_storage: Literal["local-restricted"]
+    terms_observation: str = Field(min_length=1)
+    required_citations: tuple[str, ...] = Field(min_length=1)
+    conditions: tuple[str, ...] = Field(min_length=1)
+    claim_boundary: str = Field(min_length=1)
+
+    @classmethod
+    def load(cls, path: str | Path) -> RestrictedUseApprovalRecord:
+        return cls.model_validate(load_yaml_unique(path))
+
+
 class LicenseSpec(StrictModel):
     status: AuditStatus
     name: str | None = None
     terms_url: str | None = None
     redistribution: Literal["prohibited", "metadata-only", "derived-only", "allowed", "pending"]
     privacy_notes: str
+    restricted_use_authorization: RestrictedUseAuthorizationSpec | None = None
     blocker: str | None = None
 
     @model_validator(mode="after")
     def approved_is_complete(self) -> LicenseSpec:
-        if self.status is AuditStatus.APPROVED and (not self.name or not self.terms_url):
-            raise ValueError("approved licenses require name and terms_url")
-        if self.status is not AuditStatus.APPROVED and not self.blocker:
-            raise ValueError("pending/blocked licenses require an explicit blocker")
+        named_standard_license = bool(self.name and self.terms_url)
+        if bool(self.name) != bool(self.terms_url):
+            raise ValueError("standard license name and terms_url must be provided together")
+        if self.status is AuditStatus.APPROVED:
+            if self.blocker is not None:
+                raise ValueError("approved license audits cannot retain a blocker")
+            if not named_standard_license and self.restricted_use_authorization is None:
+                raise ValueError(
+                    "approved license audits require a named standard license or restricted-use authorization"
+                )
+            if self.restricted_use_authorization is not None and named_standard_license:
+                raise ValueError("restricted-use authorization cannot be represented as a named standard license")
+        else:
+            if not self.blocker:
+                raise ValueError("pending/blocked licenses require an explicit blocker")
+            if self.restricted_use_authorization is not None:
+                raise ValueError(
+                    "pending/blocked license audits cannot carry an approved restricted-use authorization"
+                )
         return self
 
 
@@ -435,7 +507,43 @@ class DatasetRegistry(StrictModel):
 
     @classmethod
     def load(cls, path: str | Path) -> DatasetRegistry:
-        return cls.model_validate(load_yaml_unique(path))
+        source = Path(path).resolve(strict=True)
+        registry = cls.model_validate(load_yaml_unique(source))
+        registry.validate_restricted_use_approval_records(source.parent)
+        return registry
+
+    def validate_restricted_use_approval_records(self, registry_directory: str | Path) -> None:
+        """Verify every restricted-use decision against its bound local metadata record."""
+
+        root = Path(registry_directory).resolve(strict=True)
+        for entry in self.datasets:
+            authorization = entry.license_info.restricted_use_authorization
+            if authorization is None:
+                continue
+            record_path = (root / authorization.approval_record).resolve(strict=True)
+            if root not in record_path.parents or not record_path.is_file():
+                raise ValueError(
+                    f"restricted-use approval record escapes the registry directory: {authorization.approval_record}"
+                )
+            if sha256_file(record_path) != authorization.approval_record_sha256:
+                raise ValueError(f"restricted-use approval record hash mismatch: {authorization.approval_record}")
+            record = RestrictedUseApprovalRecord.load(record_path)
+            expected = {
+                "dataset_id": entry.dataset_id,
+                "dataset_version": entry.source.version,
+                "authorization_basis": authorization.authorization_basis,
+                "scope": authorization.scope,
+                "reviewer": authorization.reviewer,
+                "reviewed_at": authorization.reviewed_at,
+                "standard_license_claimed": authorization.standard_license_claimed,
+                "official_citation_required": authorization.official_citation_required,
+                "raw_redistribution_allowed": authorization.raw_redistribution_allowed,
+            }
+            observed = {name: getattr(record, name) for name in expected}
+            if observed != expected:
+                raise ValueError(
+                    f"restricted-use approval record does not match registry binding: {authorization.approval_record}"
+                )
 
     @property
     def sha256(self) -> str:

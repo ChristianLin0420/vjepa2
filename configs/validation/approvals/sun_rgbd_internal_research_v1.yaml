@@ -1,0 +1,32 @@
+schema_version: jepa4d-restricted-data-use-approval-record-v1
+approval_id: sun-rgbd-internal-research-2026-06-30-v1
+dataset_id: sun-rgbd.geometry-development
+dataset_version: SUNRGBD-v1
+decision: approved
+authorization_basis: project-owner
+scope: internal-research-only
+reviewer: User-authorized project owner, 2026-06-30
+reviewed_at: '2026-06-30'
+standard_license_claimed: false
+official_citation_required: true
+raw_redistribution_allowed: false
+raw_storage: local-restricted
+terms_observation: >-
+  The official SUN RGB-D materials do not state one unambiguous blanket data license covering the complete collection and
+  its NYU Depth v2, Berkeley B3DO, and SUN3D constituents. This project-owner decision does not infer or name a standard
+  license; it authorizes only the bounded internal-research use recorded here.
+required_citations:
+  - SUN RGB-D, Song, Lichtenberg, and Xiao, CVPR 2015
+  - NYU Depth v2, Silberman, Hoiem, Kohli, and Fergus, ECCV 2012
+  - Berkeley B3DO, Janoch et al., ICCV Workshop 2011
+  - SUN3D, Xiao, Owens, and Torralba, ICCV 2013
+conditions:
+  - Use only the official SUN RGB-D collection for internal project research.
+  - Preserve all official SUN RGB-D and constituent-dataset citation requirements.
+  - Do not redistribute raw RGB, depth, intrinsics, source paths, archives, or reconstructive derived caches.
+  - Keep raw data, raw targets, previews, and large derived features in restricted local storage and out of W&B and Git.
+  - Keep trained checkpoints, feature normalizers, calibration payloads, and per-frame scalar diagnostics local; W&B may receive only aggregate reports, sanitized aggregate visualizations, and numeric allocated-GPU telemetry.
+  - Publish only aggregate metrics and other artifacts allowed by the dataset registry.
+claim_boundary: >-
+  This is a project-owner internal-use authorization, not a finding that SUN RGB-D has a standard or blanket license and
+  not permission for raw redistribution, external publication of protected samples, or DIODE access.

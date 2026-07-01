@@ -2,9 +2,10 @@
 
 ## Outcome
 
-The checked-in Phase 2 readiness pack is **metadata-audit ready, partially implemented for consumed Phase 2b regression,
-and blocked for architecture development or external confirmation**. It is deliberately not a preregistration, dataset
-grant, target-opening receipt, training authorization, or external-evaluation authorization.
+The checked-in Phase 2 readiness pack is **execution-ready for the preregistered Phase 2g SUN development lineage,
+partially implemented for consumed Phase 2b regression, and blocked for external confirmation**. It authorizes only the
+registered non-held-out Phase 2g SUN split and operations; it is not a target-opening receipt or external-evaluation
+authorization.
 
 The machine-readable source is
 [`configs/validation/geometry/phase2_readiness_v1.yaml`](../../configs/validation/geometry/phase2_readiness_v1.yaml).
@@ -22,17 +23,17 @@ or target.
 |---|---|---|
 | Repository metadata audit | `audit-ready` | Registry, ledger, specification, tracked legacy manifests, hashes, and recorded gaps can be checked without data access. |
 | Consumed TUM regression | `partial-runtime-implemented` | A hash-bound, test-covered runner authorizes and evaluates only the consumed Phase 2b split from its verified archive. Phase 2c has no equivalent runtime, both manifests remain legacy, and no terminal Slurm/W&B/postflight receipt is bound into this pack. |
-| SUN development | `policy-blocked` | SUN constituent licensing, identity-only selection, invalid-depth policy, per-split Wave A manifests, governed target separation, and formal preregistration remain incomplete. |
+| SUN development | `execution-ready` | Bounded internal-research use, deterministic eligibility/selection, target separation, operations, and the formal preregistration are frozen for the new non-held-out 4,096-unit Phase 2g split. |
 | DIODE external | `sealed-blocked` | DIODE remains sealed; the signer, append-only store, survivor, calibrator, exact enumeration, governed adapter, and external preregistration are absent. |
 
-Every gate has `execution_ready: false` and `pack_authorizes_data_access: false`. The pack itself never grants access. The
-separate runtime controller may authorize the exact ledger-permitted consumed Phase 2b regression; that exception is an
-integration/regression diagnostic only and does not make the portfolio or a scientific-promotion gate execution-ready.
+Exactly the SUN development gate has `execution_ready: true` and `pack_authorizes_data_access: true`. Every other gate is
+false, and DIODE remains sealed. The separate runtime controller may also authorize the exact ledger-permitted consumed
+Phase 2b regression; that exception is an integration/regression diagnostic only.
 The first real invocation completed as Slurm job `29662550` and [W&B run
 `b7yzbpfo`](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/b7yzbpfo), with terminal content address
 `f575762f4c4a24b9cae968d543042fe33d5d074920e0974fd6f2f3a9286d1d32`. That ignored local receipt is recorded in the
-[experiment ledger](../experiments/2026-06-30-wave-a-geometry-official-mini.md) but remains deliberately unbound from this
-metadata-only clean-clone pack.
+[experiment ledger](../experiments/2026-06-30-wave-a-geometry-official-mini.md) but remains deliberately unbound from the
+current clean-clone authorization pack.
 
 ## Runtime implementation binding
 
@@ -42,6 +43,11 @@ validation fails if any bound file is missing from Git or its SHA-256 changes. T
 the partial-runtime status describes; it does not prove that a real job ran or that the tests passed in a particular CI
 environment. A real execution claim still requires the terminal receipt produced after strict postflight and terminal
 online-W&B publication.
+
+The separate `phase2g_runtime` binding records `hash-bound-complete` and covers the complete 57-file formal implementation,
+test, runner, submitter, Slurm, and postflight inventory. Repository validation fails on any content drift. The formal
+preflight additionally requires these files, the preregistration, registry, ledger, and readiness pack to be tracked in one
+clean pushed commit.
 
 ## Legacy manifest gaps
 
@@ -105,24 +111,28 @@ Validation fails closed when:
 - a bound Phase 2b runtime, W&B/dashboard, Slurm/postflight, or focused test file changes bytes or is absent from Git;
 - a registered geometry split changes its manifest path/hash, operations, target state, or ledger state;
 - a required legacy file is absent from Git, or the ignored Phase 2f receipt becomes tracked without updating its status;
-- the SUN legal blocker, DIODE signer blocker, or local non-append-only ledger blocker no longer matches the bound state.
+- the SUN restricted-use approval record, DIODE signer blocker, or local non-append-only ledger blocker no longer matches
+  the bound state.
 
 ## Next migration order
 
-1. With the first terminal Phase 2b Slurm/online-W&B/postflight receipt now recorded, promote target-free per-split Phase
-   2b and Phase 2c Wave A manifests and add equivalent Phase 2c runtime coverage.
-2. Complete SUN constituent-license review, then implement an identity-only selector that cannot receive depth paths.
-3. Promote portable SUN Phase 2e and Phase 2f membership artifacts; keep target validation in a separately authorized path.
-4. Freeze the Phase 2 scientific preregistration and complete all SUN development gates.
+1. Commit and push the complete hash-bound authorization/runtime lineage without changing any bound bytes.
+2. Execute only through the clean, pushed, preregistration-bound Phase 2g preflight and preserve the generated target-free
+   membership, cache-separation, W&B, scheduler, and terminal receipts.
+3. Promote portable SUN Phase 2e and Phase 2f membership artifacts as historical audit improvements; their legacy gaps do
+   not block the new Phase 2g split authorization.
+4. Promote target-free per-split Phase 2b/2c manifests and add equivalent Phase 2c runtime coverage independently.
 5. Only after one survivor is frozen, provision the DIODE signer and externally append-only store, then write a separate
    external preregistration. DIODE remains sealed until that atomic signed first-open transition.
 
 ## Claim boundary
 
-This pack supports repository-metadata auditability, an exact binding to the partial Phase 2b runtime source/test files, a
-recomputed TUM overlap statement, and an explicit record of the historical-but-clean-clone-unverifiable SUN overlap
-assertion. It does not itself authorize data access, prove a test execution, establish a real terminal job receipt,
-authorize regression execution, permit model fitting, decode targets, access caches, or authorize external evaluation.
+This pack supports repository-metadata auditability, a hash-bound SUN project-owner authorization for internal research
+under official citation and no-raw-redistribution conditions, and execution of the exact registered non-held-out Phase 2g
+SUN development operations under the bound preregistration. It also binds the partial Phase 2b runtime source/test files,
+a recomputed TUM overlap statement, and the historical-but-clean-clone-unverifiable SUN overlap assertion. The SUN record
+is not a standard or blanket license, and authorization is not evidence that a job ran or passed. Nothing here authorizes
+another split, lineage, raw redistribution, or external evaluation.
 The separate controller can authorize the exact consumed Phase 2b regression under its ledger future-use rule. In
 particular, nothing here permits listing, extracting, sampling, decoding, rehashing, summarizing, visualizing, or caching
 DIODE content.

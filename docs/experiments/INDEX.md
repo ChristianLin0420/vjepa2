@@ -31,11 +31,11 @@ results that actually ran.
 | 5 · planning | [Verified recovery](2026-06-29-phase5-planning.md) | [8kctk4mt](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/8kctk4mt) | contract-only | Explicit evidence, safe uncertainty rejection, failure attribution, and bounded recovery pass; real V-JEPA→CEM handoff ran on A100 before it became unavailable. | Integrate learned dynamics and a named simulator. |
 | 6 · benchmarking | [Versioned benchmark harness](2026-06-29-phase6-benchmark-harness.md) | [63j8m3cp](https://wandb.ai/crlc112358/jepa4d-worldmodel/runs/63j8m3cp) | contract-only | Six stages × five repetitions produce validated manifests, bootstrap intervals, typed failures, and JSON/HTML/Markdown/W&B artifacts. | Add one official licensed mini subset per stage. |
 
-The geometry-specific proposed gate is
-[Phase 2g quality-first detached scale and camera conditioning](2026-06-29-phase2g-quality-first-proposal.md). It is a
-plan, not authorization to submit its scientific DAG. The completed synthetic preflight is controlled-fixture evidence
-outside Phase 2g-A and clears no scientific or governance gate. Project-wide execution begins with Wave A of the
-[validation plan](../VALIDATION_PLAN.md), after which independent adapter/data work can proceed in parallel.
+The geometry-specific design is now frozen in the
+[Phase 2g-A quality-first preregistration](2026-06-30-phase2g-quality-first-preregistered.md), with a scoped SUN RGB-D
+internal-research authorization and DIODE kept sealed. This authorizes the formal DAG but is not a result: no Phase 2g-A
+quality row is promoted here until strict terminal postflight completes. The earlier synthetic preflight remains
+controlled-fixture evidence outside the scientific DAG.
 
 ## Evidence levels
 

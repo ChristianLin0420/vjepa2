@@ -412,28 +412,32 @@ def cuda_hardware_identity(device: torch.device) -> dict[str, Any]:
         raise RuntimeError("CUDA hardware identity requires an available CUDA device")
     index = torch.cuda.current_device() if device.index is None else device.index
     properties = torch.cuda.get_device_properties(index)
+    property_uuid = getattr(properties, "uuid", None)
+    if isinstance(property_uuid, bytes):
+        property_uuid = property_uuid.decode("ascii", errors="strict")
+    property_uuid = str(property_uuid).strip() if property_uuid else ""
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    selector = property_uuid or (visible if visible and "," not in visible else "")
     result: dict[str, Any] = {
         "gpu_index": index,
+        "gpu_logical_index": index,
+        "gpu_index_is_logical": True,
         "gpu_name": torch.cuda.get_device_name(index),
-        "gpu_uuid": "unknown",
+        "gpu_uuid": property_uuid or "unknown",
         "driver_version": "unknown",
         "cuda_runtime": torch.version.cuda or "unknown",
         "compute_capability": [properties.major, properties.minor],
         "total_memory_bytes": properties.total_memory,
     }
-    query = subprocess.run(
-        (
-            "nvidia-smi",
-            f"--id={index}",
-            "--query-gpu=uuid,driver_version",
-            "--format=csv,noheader,nounits",
-        ),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    command = ["nvidia-smi"]
+    if selector:
+        command.append(f"--id={selector}")
+    command.extend(("--query-gpu=uuid,driver_version", "--format=csv,noheader,nounits"))
+    query = subprocess.run(tuple(command), capture_output=True, text=True, check=False)
     if query.returncode == 0 and query.stdout.strip():
         fields = [value.strip() for value in query.stdout.splitlines()[0].split(",")]
         if len(fields) == 2 and all(fields):
+            if property_uuid and fields[0] != property_uuid:
+                raise RuntimeError("PyTorch and nvidia-smi GPU UUID identities differ")
             result["gpu_uuid"], result["driver_version"] = fields
     return result

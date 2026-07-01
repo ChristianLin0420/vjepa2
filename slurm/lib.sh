@@ -153,15 +153,29 @@ jepa4d_start_gpu_monitor() {
   local interval="${JEPA4D_GPU_MONITOR_INTERVAL:-15}"
   JEPA4D_GPU_MONITOR_PID=""
   if command -v nvidia-smi >/dev/null 2>&1; then
-    local query_fields
+    local query_fields selector discovered
+    selector="${CUDA_VISIBLE_DEVICES:-${SLURM_JOB_GPUS:-}}"
+    if [[ "$selector" == *,* ]]; then
+      jepa4d_die "GPU monitor requires exactly one allocated GPU, got: $selector"
+    fi
+    if [[ -z "$selector" ]]; then
+      discovered="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits 2>/dev/null || true)"
+      if [[ -n "$discovered" && "$(printf '%s\n' "$discovered" | awk 'NF {count++} END {print count+0}')" == 1 ]]; then
+        selector="$(printf '%s\n' "$discovered" | awk 'NF {print $1; exit}')"
+      else
+        jepa4d_die "GPU monitor cannot identify exactly one allocated GPU"
+      fi
+    fi
     query_fields="timestamp,index,uuid,name,pstate,temperature.gpu,utilization.gpu,utilization.memory"
     query_fields+=",memory.used,memory.total,power.draw,clocks.sm"
     nvidia-smi \
+      --id="$selector" \
       --query-gpu="$query_fields" \
       --format=csv --loop="$interval" >"$destination" 2>&1 &
     JEPA4D_GPU_MONITOR_PID=$!
+    JEPA4D_GPU_MONITOR_SELECTOR="$selector"
   fi
-  export JEPA4D_GPU_MONITOR_PID
+  export JEPA4D_GPU_MONITOR_PID JEPA4D_GPU_MONITOR_SELECTOR
 }
 
 jepa4d_stop_gpu_monitor() {

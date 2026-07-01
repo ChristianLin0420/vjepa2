@@ -63,6 +63,12 @@
         "ledger": {
           "$ref": "#/$defs/LedgerBinding"
         },
+        "phase2g_runtime": {
+          "$ref": "#/$defs/Phase2gRuntimeBinding"
+        },
+        "preregistration": {
+          "$ref": "#/$defs/PreregistrationBinding"
+        },
         "registry": {
           "$ref": "#/$defs/RegistryBinding"
         },
@@ -77,7 +83,9 @@
         "registry",
         "ledger",
         "specification",
-        "runtime"
+        "preregistration",
+        "runtime",
+        "phase2g_runtime"
       ],
       "title": "CoreBindings",
       "type": "object"
@@ -115,7 +123,14 @@
           "type": "string"
         },
         "ledger_state": {
-          "$ref": "#/$defs/LedgerState"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LedgerState"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "registry_target_state": {
           "$ref": "#/$defs/TargetState"
@@ -162,7 +177,6 @@
           "type": "string"
         },
         "pack_authorizes_data_access": {
-          "const": false,
           "title": "Pack Authorizes Data Access",
           "type": "boolean"
         },
@@ -218,7 +232,8 @@
         "audit-ready",
         "partial-runtime-implemented",
         "policy-blocked",
-        "sealed-blocked"
+        "sealed-blocked",
+        "execution-ready"
       ],
       "title": "GeometryGateStatus",
       "type": "string"
@@ -292,6 +307,11 @@
     "LegacyManifestGap": {
       "additionalProperties": false,
       "properties": {
+        "blocks_current_authorization": {
+          "const": false,
+          "title": "Blocks Current Authorization",
+          "type": "boolean"
+        },
         "clean_clone_available": {
           "title": "Clean Clone Available",
           "type": "boolean"
@@ -341,9 +361,92 @@
         "clean_clone_available",
         "legacy_schema",
         "scope_gap",
-        "migration_required"
+        "migration_required",
+        "blocks_current_authorization"
       ],
       "title": "LegacyManifestGap",
+      "type": "object"
+    },
+    "Phase2gRuntimeBinding": {
+      "additionalProperties": false,
+      "description": "Complete formal Phase 2g implementation, test, and orchestration identity.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/Phase2gRuntimeFileBinding"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "final_hash_binding_required": {
+          "const": false,
+          "title": "Final Hash Binding Required",
+          "type": "boolean"
+        },
+        "scope": {
+          "const": "phase2g-formal-sun-development",
+          "title": "Scope",
+          "type": "string"
+        },
+        "status": {
+          "const": "hash-bound-complete",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "status",
+        "final_hash_binding_required",
+        "files"
+      ],
+      "title": "Phase2gRuntimeBinding",
+      "type": "object"
+    },
+    "Phase2gRuntimeFileBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "file_sha256": {
+          "title": "File Sha256",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "file_sha256"
+      ],
+      "title": "Phase2gRuntimeFileBinding",
+      "type": "object"
+    },
+    "PreregistrationBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "file_sha256": {
+          "title": "File Sha256",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[^/\\x00][^\\x00]*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "const": "preregistered-authorized",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "file_sha256",
+        "status"
+      ],
+      "title": "PreregistrationBinding",
       "type": "object"
     },
     "RegistryBinding": {
@@ -461,7 +564,7 @@
           "type": "string"
         },
         "status": {
-          "const": "proposed-not-preregistered",
+          "const": "baseline-with-authorized-preregistration",
           "title": "Status",
           "type": "string"
         }
@@ -734,7 +837,7 @@
       "type": "string"
     },
     "scope": {
-      "const": "metadata-only-no-target-access",
+      "const": "phase2g-sun-development-authorization",
       "title": "Scope",
       "type": "string"
     }

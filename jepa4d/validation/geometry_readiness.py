@@ -1,10 +1,10 @@
-"""Metadata-only readiness contract for the governed Phase 2 geometry portfolio.
+"""Scoped execution-readiness contract for the governed Phase 2 geometry portfolio.
 
 This module never resolves dataset roots or reads dataset, cache, prediction, or
-target artifacts.  It validates repository metadata plus the exact source/test
-files behind the partial consumed-regression runtime, and records why scientific
-promotion remains blocked.  It is not an access-control bypass: dataset access
-continues to require the registry/ledger controller.
+target artifacts. It validates the registry, ledger, authorization records,
+preregistration, and exact source/test files behind the partial consumed-regression
+runtime. It is not an access-control bypass: dataset access continues to require
+the registry/ledger controller and the separately guarded formal preflight.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from jepa4d.validation._content import load_yaml_unique, sha256_file
 from jepa4d.validation.ledger import ConsumedTestLedger, LedgerState
 from jepa4d.validation.registry import (
     SHA256_PATTERN,
+    TARGET_SPLITS,
     AccessOperation,
     DatasetRegistry,
     StrictModel,
@@ -42,6 +43,65 @@ _RUNTIME_FILE_ROLES = {
     "jepa4d/tests/test_validation_wandb.py": "test",
     "jepa4d/tests/test_validation_dashboard.py": "test",
 }
+_PHASE2G_RUNTIME_PATHS = (
+    "jepa4d/evaluation/phase2g_data.py",
+    "jepa4d/evaluation/phase2g_metrics.py",
+    "jepa4d/evaluation/phase2g_visualization.py",
+    "jepa4d/training/phase2g_protocol.py",
+    "jepa4d/training/phase2g_runtime.py",
+    "jepa4d/training/phase2g_training.py",
+    "jepa4d/tests/test_phase2g_formal_core.py",
+    "jepa4d/tests/test_phase2g_formal_slurm.py",
+    "jepa4d/tests/test_phase2g_formal_postflight.py",
+    "scripts/build_phase2g_data_cache.py",
+    "scripts/audit_phase2g_formal.py",
+    "scripts/run_phase2g_tuning.py",
+    "scripts/select_phase2g_learning_rates.py",
+    "scripts/run_phase2g_formal_training.py",
+    "scripts/evaluate_phase2g_heldout.py",
+    "scripts/select_phase2g_survivor.py",
+    "scripts/write_phase2g_dependency_graph.py",
+    "slurm/phase2g_contract.py",
+    "slurm/phase2g_preflight.py",
+    "slurm/phase2g_stage_gate.py",
+    "slurm/phase2g_test_runner.py",
+    "slurm/phase2g_postflight.py",
+    "slurm/submit_phase2g.sh",
+    "slurm/phase2g_tests.sbatch",
+    "slurm/phase2g_opacity.sbatch",
+    "slurm/phase2g_cache.sbatch",
+    "slurm/phase2g_audit.sbatch",
+    "slurm/phase2g_array_dispatch.sbatch",
+    "slurm/phase2g_tune.sbatch",
+    "slurm/phase2g_lr_select.sbatch",
+    "slurm/phase2g_train.sbatch",
+    "slurm/phase2g_evaluate.sbatch",
+    "slurm/phase2g_select.sbatch",
+    "slurm/phase2g_external_guard.sbatch",
+    "slurm/phase2g_postflight.sbatch",
+    "scripts/materialize_phase2g_sun.py",
+    "slurm/lib.sh",
+    "scripts/check_cuda.py",
+    "jepa4d/benchmarks/geometry/sun_rgbd.py",
+    "jepa4d/data/camera_geometry.py",
+    "jepa4d/data/rgb_input.py",
+    "jepa4d/data/schemas.py",
+    "jepa4d/data/transforms.py",
+    "jepa4d/evaluation/phase2e_feature_cache.py",
+    "jepa4d/evaluation/phase2f_camera_controls.py",
+    "jepa4d/evaluation/phase2f_data_cache.py",
+    "jepa4d/evaluation/phase2f_metrics.py",
+    "jepa4d/models/geometry_student.py",
+    "jepa4d/models/phase2f_scale_geometry.py",
+    "jepa4d/models/vjepa21_adapter.py",
+    "jepa4d/training/phase2f_losses.py",
+    "jepa4d/training/phase2f_training.py",
+    "jepa4d/validation/_content.py",
+    "jepa4d/validation/access.py",
+    "jepa4d/validation/geometry_readiness.py",
+    "jepa4d/validation/ledger.py",
+    "jepa4d/validation/registry.py",
+)
 
 
 def _validate_relative_repository_path(value: str) -> str:
@@ -63,6 +123,7 @@ class GeometryGateStatus(StrEnum):
     PARTIAL_RUNTIME_IMPLEMENTED = "partial-runtime-implemented"
     POLICY_BLOCKED = "policy-blocked"
     SEALED_BLOCKED = "sealed-blocked"
+    EXECUTION_READY = "execution-ready"
 
 
 class BlockerCategory(StrEnum):
@@ -124,7 +185,7 @@ class LedgerBinding(StrictModel):
 class SpecificationBinding(StrictModel):
     path: str = Field(pattern=_SAFE_PATH_PATTERN)
     file_sha256: str
-    status: Literal["proposed-not-preregistered"]
+    status: Literal["baseline-with-authorized-preregistration"]
 
     @field_validator("path")
     @classmethod
@@ -136,6 +197,24 @@ class SpecificationBinding(StrictModel):
     def hash_is_sha256(cls, value: str) -> str:
         if not SHA256_PATTERN.fullmatch(value):
             raise ValueError("specification binding hash must be lowercase SHA-256")
+        return value
+
+
+class PreregistrationBinding(StrictModel):
+    path: str = Field(pattern=_SAFE_PATH_PATTERN)
+    file_sha256: str
+    status: Literal["preregistered-authorized"]
+
+    @field_validator("path")
+    @classmethod
+    def path_is_safe(cls, value: str) -> str:
+        return _validate_relative_repository_path(value)
+
+    @field_validator("file_sha256")
+    @classmethod
+    def hash_is_sha256(cls, value: str) -> str:
+        if not SHA256_PATTERN.fullmatch(value):
+            raise ValueError("preregistration binding hash must be lowercase SHA-256")
         return value
 
 
@@ -170,11 +249,46 @@ class RuntimeBinding(StrictModel):
         return self
 
 
+class Phase2gRuntimeFileBinding(StrictModel):
+    path: str = Field(pattern=_SAFE_PATH_PATTERN)
+    file_sha256: str
+
+    @field_validator("path")
+    @classmethod
+    def path_is_safe(cls, value: str) -> str:
+        return _validate_relative_repository_path(value)
+
+    @field_validator("file_sha256")
+    @classmethod
+    def hash_is_sha256(cls, value: str) -> str:
+        if not SHA256_PATTERN.fullmatch(value):
+            raise ValueError("Phase 2g runtime file binding must be a lowercase SHA-256")
+        return value
+
+
+class Phase2gRuntimeBinding(StrictModel):
+    """Complete formal Phase 2g implementation, test, and orchestration identity."""
+
+    scope: Literal["phase2g-formal-sun-development"]
+    status: Literal["hash-bound-complete"]
+    final_hash_binding_required: Literal[False]
+    files: tuple[Phase2gRuntimeFileBinding, ...]
+
+    @model_validator(mode="after")
+    def file_set_is_exact(self) -> Phase2gRuntimeBinding:
+        observed = tuple(value.path for value in self.files)
+        if observed != _PHASE2G_RUNTIME_PATHS:
+            raise ValueError("Phase 2g runtime binding must cover the exact canonical file inventory in order")
+        return self
+
+
 class CoreBindings(StrictModel):
     registry: RegistryBinding
     ledger: LedgerBinding
     specification: SpecificationBinding
+    preregistration: PreregistrationBinding
     runtime: RuntimeBinding
+    phase2g_runtime: Phase2gRuntimeBinding
 
 
 class GateBlocker(StrictModel):
@@ -187,7 +301,7 @@ class GateTarget(StrictModel):
     dataset_id: str
     split_id: str
     registry_target_state: TargetState
-    ledger_state: LedgerState
+    ledger_state: LedgerState | None
 
 
 class GeometryGate(StrictModel):
@@ -195,7 +309,7 @@ class GeometryGate(StrictModel):
     status: GeometryGateStatus
     metadata_ready: bool
     execution_ready: bool
-    pack_authorizes_data_access: Literal[False]
+    pack_authorizes_data_access: bool
     sealed: bool
     targets: tuple[GateTarget, ...] = ()
     registered_operations: frozenset[AccessOperation] = frozenset()
@@ -204,9 +318,19 @@ class GeometryGate(StrictModel):
 
     @model_validator(mode="after")
     def status_is_fail_closed(self) -> GeometryGate:
-        if self.execution_ready:
-            raise ValueError("the metadata-only readiness pack cannot declare execution readiness")
-        if self.status is GeometryGateStatus.AUDIT_READY:
+        if self.status is GeometryGateStatus.EXECUTION_READY:
+            if (
+                self.gate_id is not GeometryGateId.SUN_DEVELOPMENT
+                or not self.metadata_ready
+                or not self.execution_ready
+                or not self.pack_authorizes_data_access
+                or self.blockers
+                or self.sealed
+            ):
+                raise ValueError("only a blocker-free SUN development gate may authorize execution and data access")
+        elif self.execution_ready or self.pack_authorizes_data_access:
+            raise ValueError("only the execution-ready SUN development gate may authorize execution or data access")
+        elif self.status is GeometryGateStatus.AUDIT_READY:
             if not self.metadata_ready or self.blockers:
                 raise ValueError("audit-ready gates require metadata_ready=true and no blockers")
         elif not self.blockers:
@@ -234,6 +358,7 @@ class LegacyManifestGap(StrictModel):
     legacy_schema: str = Field(min_length=1)
     scope_gap: str = Field(min_length=1)
     migration_required: Literal[True]
+    blocks_current_authorization: Literal[False]
 
     @field_validator("registered_path")
     @classmethod
@@ -351,7 +476,7 @@ class ClaimBoundary(StrictModel):
 class GeometryReadinessPack(StrictModel):
     schema_version: Literal["jepa4d-phase2-geometry-readiness-v1"]
     pack_version: str
-    scope: Literal["metadata-only-no-target-access"]
+    scope: Literal["phase2g-sun-development-authorization"]
     bindings: CoreBindings
     gates: tuple[GeometryGate, ...]
     legacy_manifest_gaps: tuple[LegacyManifestGap, ...]
@@ -363,6 +488,15 @@ class GeometryReadinessPack(StrictModel):
         gate_ids = [gate.gate_id for gate in self.gates]
         if gate_ids != list(GeometryGateId):
             raise ValueError("geometry gates must contain the four canonical gates in canonical order")
+        authorized = [
+            gate
+            for gate in self.gates
+            if gate.execution_ready
+            or gate.pack_authorizes_data_access
+            or gate.status is GeometryGateStatus.EXECUTION_READY
+        ]
+        if len(authorized) != 1 or authorized[0].gate_id is not GeometryGateId.SUN_DEVELOPMENT:
+            raise ValueError("exactly the SUN development gate must carry Phase 2g execution authorization")
         gap_keys = [(gap.dataset_id, gap.split_id) for gap in self.legacy_manifest_gaps]
         expected_gap_keys = {
             ("sun-rgbd.geometry-development", "sun-rgbd.phase2e-kv2-test"),
@@ -382,14 +516,16 @@ class GeometryReadinessPack(StrictModel):
         return cls.model_validate(load_yaml_unique(path))
 
     def validate_repository(self, repository_root: str | Path) -> None:
-        """Verify only checked-in metadata and source; no dataset/cache root is consulted."""
+        """Verify checked-in authorization metadata and source without resolving data roots."""
         root = Path(repository_root).resolve(strict=True)
         registry_path = _resolve_repository_path(root, self.bindings.registry.path)
         ledger_path = _resolve_repository_path(root, self.bindings.ledger.path)
         specification_path = _resolve_repository_path(root, self.bindings.specification.path)
+        preregistration_path = _resolve_repository_path(root, self.bindings.preregistration.path)
         _require_file_hash(registry_path, self.bindings.registry.file_sha256)
         _require_file_hash(ledger_path, self.bindings.ledger.file_sha256)
         _require_file_hash(specification_path, self.bindings.specification.file_sha256)
+        _require_file_hash(preregistration_path, self.bindings.preregistration.file_sha256)
 
         registry = DatasetRegistry.load(registry_path)
         ledger = ConsumedTestLedger.load(ledger_path)
@@ -422,6 +558,8 @@ class GeometryReadinessPack(StrictModel):
             if binding.path not in tracked_paths:
                 raise ValueError(f"bound geometry runtime file is absent from a clean clone: {binding.path}")
             _require_file_hash(_resolve_repository_path(root, binding.path), binding.file_sha256)
+        for phase2g_binding in self.bindings.phase2g_runtime.files:
+            _require_file_hash(_resolve_repository_path(root, phase2g_binding.path), phase2g_binding.file_sha256)
         for gap in self.legacy_manifest_gaps:
             _, split = registry.split(gap.dataset_id, gap.split_id)
             if (split.id_manifest, split.id_manifest_sha256) != (gap.registered_path, gap.registered_sha256):
@@ -457,9 +595,22 @@ class GeometryReadinessPack(StrictModel):
         )
         if registry.dataset("tum-rgbd.geometry-regression").readiness_blockers:
             raise ValueError("TUM consumed regression metadata unexpectedly has registry audit blockers")
-        sun_blockers = registry.dataset("sun-rgbd.geometry-development").readiness_blockers
-        if not any(value.startswith("license:pending:") for value in sun_blockers):
-            raise ValueError("SUN legal blocker is missing from the bound registry")
+        sun = registry.dataset("sun-rgbd.geometry-development")
+        if sun.readiness_blockers:
+            raise ValueError("SUN restricted-use registry audit unexpectedly retains blockers")
+        sun_license = sun.license_info
+        sun_authorization = sun_license.restricted_use_authorization
+        if (
+            sun_license.name is not None
+            or sun_license.terms_url is not None
+            or sun_license.redistribution != "prohibited"
+            or sun_authorization is None
+            or sun_authorization.scope != "internal-research-only"
+            or sun_authorization.standard_license_claimed
+            or not sun_authorization.official_citation_required
+            or sun_authorization.raw_redistribution_allowed
+        ):
+            raise ValueError("SUN restricted-use approval boundary differs from the bound governance decision")
         diode_blockers = registry.dataset("diode.geometry-external").readiness_blockers
         if not any(value.startswith("sealed_authority:pending:") for value in diode_blockers):
             raise ValueError("DIODE signer blocker is missing from the bound registry")
@@ -542,11 +693,20 @@ def _validate_dataset_gate(
     if observed_splits != expected_splits or len(gate.targets) != len(expected_splits):
         raise ValueError(f"geometry gate {gate.gate_id.value} does not bind every registered split exactly once")
     expected_operations: set[AccessOperation] = set()
+    ledger_targets = {(target.dataset_id, target.split_id): target for target in ledger.targets}
     for target in gate.targets:
         _, split = registry.split(target.dataset_id, target.split_id)
-        ledger_target = ledger.target(target.dataset_id, target.split_id)
-        if target.registry_target_state is not split.target_state or target.ledger_state is not ledger_target.state:
+        key = (target.dataset_id, target.split_id)
+        if target.registry_target_state is not split.target_state:
             raise ValueError(f"geometry gate target state is stale for {target.dataset_id}/{target.split_id}")
+        if split.purpose in TARGET_SPLITS:
+            ledger_target = ledger_targets.get(key)
+            if ledger_target is None or target.ledger_state is not ledger_target.state:
+                raise ValueError(f"geometry gate ledger state is stale for {target.dataset_id}/{target.split_id}")
+        elif key in ledger_targets or target.ledger_state is not None:
+            raise ValueError(
+                f"non-target split must remain absent from the ledger: {target.dataset_id}/{target.split_id}"
+            )
         expected_operations.update(split.allowed_operations)
     if gate.registered_operations != frozenset(expected_operations):
         raise ValueError(f"geometry gate registered operations are stale for {expected_dataset}")

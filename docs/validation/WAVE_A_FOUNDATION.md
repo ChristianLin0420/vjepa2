@@ -6,8 +6,9 @@
 expansion remains in progress.**
 
 Wave A started from pushed commit `21af2f3`. This implementation adds the fail-closed machinery required before dataset
-downloads, adapter qualification, or formal GPU experiments. It does not authorize training, open a held-out target, or
-claim that pending dataset terms have been approved.
+downloads, adapter qualification, or formal GPU experiments. The Wave A baseline alone does not authorize training or open
+a held-out target; the later Phase 2g readiness pack separately authorizes one preregistered non-held-out SUN development
+split while retaining the same access controls.
 
 ## Delivered contracts
 
@@ -21,8 +22,9 @@ claim that pending dataset terms have been approved.
 | Dashboard/report | [`validation_dashboard.py`](../../jepa4d/visualization/validation_dashboard.py) | Visible dataset role, evidence, gate, completeness, claim boundary, and separate quality/resource panels |
 
 The checked-in JSON schemas are under [`configs/validation/schemas/`](../../configs/validation/schemas/). They cover the
-registry, ledger, split manifest, sealed-target selector receipt, and sealed-target authorization. Content hashes normalize
-unordered collections before hashing, so registry and ledger identities are stable across Python hash seeds.
+registry, ledger, split manifest, geometry readiness, restricted data-use approval record, sealed-target selector receipt,
+and sealed-target authorization. Content hashes normalize unordered collections before hashing, so registry and ledger
+identities are stable across Python hash seeds.
 
 ## Initial portfolio state
 
@@ -121,8 +123,9 @@ The following counts describe pushed commit `2d43ff9`, not the current post-Wave
   receives an explicit security review; pseudonymous identifiers remain the default even after such a design exists.
 - [ ] Add S0-S10 experiment-state receipts and generate safe ledger/INDEX/INSIGHTS updates from postflight.
 
-Within the Phase 2 geometry scope covered here, formal training, SUN development expansion, and DIODE external evaluation
-remain blocked. The only newly implemented GPU path in this change is the exact consumed Phase 2b TUM regression smoke:
-it must run through its clean-commit Slurm wrapper, registry/ledger authorization, verified-archive extraction,
-aggregate-only online W&B publisher, and strict postflight. Any terminal receipt is integration evidence, not
-architecture-quality promotion or fresh transfer evidence.
+Within the Phase 2 geometry scope, the later hash-bound readiness/preregistration lineage authorizes the registered Phase 2g
+SUN development split and binds the completed formal runtime inventory; a clean commit, push, and passing preflight still
+gate submission. DIODE external evaluation remains blocked and sealed. The consumed Phase 2b TUM regression smoke remains
+limited to its clean-commit Slurm wrapper, registry/ledger authorization, verified-archive extraction, aggregate-only online
+W&B publisher, and strict postflight. Any terminal receipt is integration evidence, not architecture-quality promotion or
+fresh transfer evidence.

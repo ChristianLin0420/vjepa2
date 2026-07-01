@@ -99,16 +99,17 @@ and strict 73-task postflight completed. M1/M2/M3 fail the frozen head-latency g
 Selector output is no survivor, and DIODE remains sealed. The graph used 12 base submissions and never exceeded eight
 concurrent running allocations.
 
-## Phase 2g — quality-first detached scale and camera conditioning: proposed
+## Phase 2g — quality-first detached scale and camera conditioning: preregistered for formal execution
 
 The revised next gate trains and evaluates every healthy M0-M3 arm before speed becomes a hard decision. It expands the
 balanced SUN RGB-D development protocol, uses equal health-only hyperparameter selection, executes all four rotations and
 three seeds, evaluates updated/stale/wrong/permuted-K and zero-field interventions, and selects only on frozen quality and
 mechanism criteria. Efficiency remains a mandatory descriptive diagnostic. A later experiment optimizes only a frozen
 quality survivor with prediction/metric parity; external confirmation remains separately preregistered and DIODE stays
-sealed throughout Phase 2g. See the [full proposal](experiments/2026-06-29-phase2g-quality-first-proposal.md) and
-[metric guide](METRICS.md). It is the geometry-stage proposal, not blanket authorization or the project-wide first task;
-the shared validation registry, dataset-role audit, and Phase-2 prerequisites must be frozen first.
+sealed throughout Phase 2g. The scientific design originated in the
+[proposal](experiments/2026-06-29-phase2g-quality-first-proposal.md) and is now frozen in the
+[Phase 2g-A preregistration](experiments/2026-06-30-phase2g-quality-first-preregistered.md). Authorization is limited to
+the registered internal-research SUN RGB-D development lineage; it does not authorize DIODE or raw-data redistribution.
 
 ## Phase 3 — object slots and grounding: initial substrate complete
 
